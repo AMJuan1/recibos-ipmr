@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: recibos-ipmr
+    runtime: node
+    plan: starter
+    buildCommand: npm ci
+    startCommand: node --env-file-if-exists=.env server.js
+    healthCheckPath: /admin
+    envVars:
+      - key: DATA_DIR
+        value: /var/data
+      - key: NODE_VERSION
+        value: "22.13.0"
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: MAIL_TO
+        value: juantony794@gmail.com
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: "465"
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+    disk:
+      name: datos
+      mountPath: /var/data
+      sizeGB: 1

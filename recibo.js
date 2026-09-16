@@ -1,0 +1,216 @@
+// Cálculo, monto en letras y render (PDF + HTML) del recibo IPMR.
+import PDFDocument from 'pdfkit';
+import { fileURLToPath } from 'node:url';
+
+export const PROYECTOS = ['Changallo', 'Italia', 'Oficina'];
+export const MESES = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'];
+const FIRMA_AUTORIZA = fileURLToPath(new URL('./public/firma-autoriza.png', import.meta.url));
+const DIRECCION = 'Av. Artillería 9-A, Col. Manuel José Arce, Distrito de San Salvador, Municipio de San Salvador Centro, Departamento de San Salvador, El Salvador. Tel: 2230-5042, 7700-6226 Email inpromorsa@gmail.com';
+
+// ---------- montos ----------
+const cents = n => Math.round(Number(n) * 100);
+
+export function calcular(r) {
+  const subSalario = cents(r.salario) - cents(r.isss) - cents(r.afp) - cents(r.rentaSalario);
+  const subViaticos = cents(r.viaticos) - cents(r.rentaViaticos);
+  return { subSalario: subSalario / 100, subViaticos: subViaticos / 100, total: (subSalario + subViaticos) / 100 };
+}
+
+export const dinero = n => Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// ---------- número a letras (estilo legal salvadoreño: "UN MIL", centavos xx/100) ----------
+const UNI = ['', 'UN', 'DOS', 'TRES', 'CUATRO', 'CINCO', 'SEIS', 'SIETE', 'OCHO', 'NUEVE', 'DIEZ', 'ONCE', 'DOCE', 'TRECE', 'CATORCE', 'QUINCE',
+  'DIECISÉIS', 'DIECISIETE', 'DIECIOCHO', 'DIECINUEVE', 'VEINTE', 'VEINTIÚN', 'VEINTIDÓS', 'VEINTITRÉS', 'VEINTICUATRO', 'VEINTICINCO',
+  'VEINTISÉIS', 'VEINTISIETE', 'VEINTIOCHO', 'VEINTINUEVE'];
+const DEC = ['', '', '', 'TREINTA', 'CUARENTA', 'CINCUENTA', 'SESENTA', 'SETENTA', 'OCHENTA', 'NOVENTA'];
+const CEN = ['', 'CIENTO', 'DOSCIENTOS', 'TRESCIENTOS', 'CUATROCIENTOS', 'QUINIENTOS', 'SEISCIENTOS', 'SETECIENTOS', 'OCHOCIENTOS', 'NOVECIENTOS'];
+
+function cientos(n) {
+  if (n === 100) return 'CIEN';
+  const r = n % 100;
+  const dec = r < 30 ? UNI[r] : DEC[Math.floor(r / 10)] + (r % 10 ? ' Y ' + UNI[r % 10] : '');
+  return [CEN[Math.floor(n / 100)], dec].filter(Boolean).join(' ');
+}
+
+function entero(n) {
+  if (n === 0) return 'CERO';
+  const millones = Math.floor(n / 1e6), miles = Math.floor(n / 1e3) % 1e3, resto = n % 1e3;
+  return [
+    millones && (millones === 1 ? 'UN MILLÓN' : entero(millones) + ' MILLONES'),
+    miles && cientos(miles) + ' MIL',
+    resto && cientos(resto),
+  ].filter(Boolean).join(' ');
+}
+
+export function montoEnLetras(monto) {
+  const c = cents(monto);
+  return `${entero(Math.floor(c / 100))} ${String(c % 100).padStart(2, '0')}/100 DÓLARES`;
+}
+
+// ---------- datos derivados comunes a PDF y HTML ----------
+function datos(r) {
+  const { subSalario, subViaticos, total } = calcular(r);
+  const [anioE, mesE, diaE] = r.fechaEmision.split('-').map(Number);
+  const rango = `${r.diaInicio} AL ${r.diaFin}`;
+  return {
+    total, subSalario, subViaticos,
+    letras: montoEnLetras(total),
+    periodo: `${rango} DE ${r.mes} ${r.anio}`,
+    filas: [
+      { label: `SALARIO DEL ${rango}`, monto: r.salario },
+      { menos: true, label: 'ISSS', monto: r.isss },
+      { sangria: true, label: 'AFP', monto: r.afp },
+      { sangria: true, label: 'RENTA', monto: r.rentaSalario },
+      { total: true, label: 'SUB-TOTAL', monto: subSalario },
+      { vacia: true },
+      { label: `VIÁTICOS DEL ${rango}`, monto: r.viaticos },
+      { menos: true, label: 'RENTA', monto: r.rentaViaticos },
+      { total: true, label: 'SUB-TOTAL', monto: subViaticos },
+      { vacia: true },
+      { total: true, label: 'TOTAL A RECIBIR', monto: total },
+    ],
+    fecha: { dia: String(diaE), mes: MESES[mesE - 1].toLowerCase(), anio: String(anioE) },
+  };
+}
+
+export const nombreArchivo = r =>
+  `Recibo_${r.nombre.normalize('NFD').replace(/[^\w ]/g, '').trim().replace(/\s+/g, '_')}_${r.diaInicio}-${r.diaFin}_${r.mes}_${r.anio}.pdf`;
+
+// ---------- PDF (Letter, medidas tomadas de Plantilla_Recibo_IPMR.docx) ----------
+export function generarPdf(r) {
+  const d = datos(r);
+  const doc = new PDFDocument({ size: 'LETTER', margins: { top: 72, left: 72, right: 66, bottom: 20 }, info: { Title: `Recibo ${r.nombre}` } });
+  const chunks = [];
+  doc.on('data', c => chunks.push(c));
+  const listo = new Promise((ok, fail) => { doc.on('end', () => ok(Buffer.concat(chunks))); doc.on('error', fail); });
+
+  const L = 72, W = 612 - 72 - 66;
+
+  // Membrete: IPMR rojo serif + razón social Arial bold subrayada en rojo, misma línea.
+  const base = 78;
+  doc.font('Times-Bold').fontSize(48).fillColor('#BD1003');
+  const wIpmr = doc.widthOfString('IPMR');
+  const x0 = 58;
+  doc.text('IPMR', x0, base, { baseline: 'alphabetic', lineBreak: false });
+  const razon = 'INGENIERIA Y PROYECTOS MORALES SA DE CV';
+  let tam = 14;
+  doc.font('Helvetica-Bold');
+  while (doc.fontSize(tam).widthOfString(razon) > 612 - 40 - (x0 + wIpmr + 6)) tam -= 0.5;
+  const xr = x0 + wIpmr + 6, wr = doc.widthOfString(razon);
+  doc.fillColor('black').text(razon, xr, base, { baseline: 'alphabetic', lineBreak: false });
+  doc.moveTo(xr, base + 2.5).lineTo(xr + wr, base + 2.5).lineWidth(1).strokeColor('#FF0000').stroke();
+
+  // Título
+  doc.fillColor('black').font('Helvetica-Bold').fontSize(12)
+    .text(`POR $ ${dinero(d.total)}`, L, 108, { width: W, align: 'center', underline: true });
+  doc.moveDown(1);
+
+  // Párrafo justificado con tramos en negrita
+  const tramos = [
+    ['Recibí de ', false], ['INGENIERÍA Y PROYECTOS MORALES, S.A. DE C.V.', true], [', la cantidad de ', false],
+    [`${d.letras} (US$${dinero(d.total)})`, true], [', en concepto de ', false], ['SALARIO MÁS VIÁTICOS', true],
+    [', correspondientes del ', false], [d.periodo, true], ['; según el siguiente detalle.', false],
+  ];
+  doc.fontSize(10);
+  doc.x = L;
+  tramos.forEach(([t, b], i) => doc.font(b ? 'Helvetica-Bold' : 'Helvetica').text(t, { width: W, align: 'justify', continued: i < tramos.length - 1, lineGap: 1.5 }));
+  let y = doc.y + 12;
+
+  // Tabla de desglose (col 1: 331pt, col 2: 130pt alineada a la derecha)
+  for (const f of d.filas) {
+    if (f.vacia) { y += 9; continue; }
+    const fuente = f.total ? 'Helvetica-Bold' : 'Helvetica';
+    doc.font(fuente).fontSize(10);
+    if (f.menos) doc.text('(-)', L + 29, y, { lineBreak: false });
+    doc.text(f.label, L + (f.menos || f.sangria ? 60 : 0), y, { lineBreak: false, underline: !!f.total });
+    doc.text(`$${dinero(f.monto)}`, L + 331, y, { width: 130, align: 'right', underline: !!f.total });
+    y += 15.5;
+  }
+
+  // Fecha
+  y += 26;
+  const seg = [['San Salvador, ', false], [d.fecha.dia, true], [' de ', false], [d.fecha.mes, true], [' del ', false], [d.fecha.anio, true], ['.-', false]];
+  doc.font('Helvetica').fontSize(10);
+  let x = L;
+  for (const [t, u] of seg) { doc.text(t, x, y, { lineBreak: false, underline: u }); x += doc.widthOfString(t); }
+
+  y += 36;
+  doc.text('Recibí conforme el pago detallado anteriormente.', L, y);
+
+  // Firma del trabajador: espacio amplio sobre la línea
+  const yLinea = y + 78;
+  if (r.firma) doc.image(r.firma, L + 14, yLinea - 62, { fit: [190, 68], align: 'center', valign: 'bottom' });
+  doc.text('F: ______________________________', L, yLinea);
+  doc.text('Nombre del trabajador: ', L, yLinea + 15, { continued: true }).text(r.nombre, { underline: true });
+  y = yLinea + 30;
+  if (r.cargo) { doc.text('Cargo: ', L, y, { continued: true }).text(r.cargo, { underline: true }); y += 15; }
+
+  // Firma fija de autorización
+  y += 12;
+  doc.image(FIRMA_AUTORIZA, L, y, { width: 72 });
+  y += 76;
+  doc.font('Helvetica-Bold').text('Ing. José Othmaro Morales Urbina', L, y);
+  doc.font('Helvetica').text('NIT: 0715-250560-002-1', L, y + 12);
+  doc.font('Helvetica-Oblique').text('Autoriza', L, y + 24);
+
+  // Pie de página
+  doc.moveTo(L, 740).lineTo(L + W, 740).lineWidth(1.2).strokeColor('#FF0000').stroke();
+  doc.font('Helvetica').fontSize(8).fillColor('black').text(DIRECCION, L, 745, { width: W, align: 'center' });
+
+  doc.end();
+  return listo;
+}
+
+// ---------- HTML (vista móvil del mismo recibo) ----------
+export const esc = s => String(s ?? '').replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
+
+export function reciboHtml(r, firmaDataUrl) {
+  const d = datos(r);
+  const filas = d.filas.map(f => f.vacia ? '<tr class="vacia"><td colspan="2"></td></tr>' : `
+    <tr class="${f.total ? 'tot' : ''}">
+      <td class="${f.menos || f.sangria ? 'sang' : ''}">${f.menos || f.sangria ? `<span class="menos">${f.menos ? '(-)' : ''}</span>` : ''}<span>${esc(f.label)}</span></td>
+      <td class="num"><span>$${dinero(f.monto)}</span></td>
+    </tr>`).join('');
+  return `
+  <article class="hoja">
+    <header class="membrete"><span class="ipmr">IPMR</span> <span class="razon">INGENIERIA Y PROYECTOS MORALES SA DE CV</span></header>
+    <h2 class="por">POR $ ${dinero(d.total)}</h2>
+    <p class="cuerpo">Recibí de <b>INGENIERÍA Y PROYECTOS MORALES, S.A. DE C.V.</b>, la cantidad de <b>${esc(d.letras)} (US$${dinero(d.total)})</b>, en concepto de <b>SALARIO MÁS VIÁTICOS</b>, correspondientes del <b>${esc(d.periodo)}</b>; según el siguiente detalle.</p>
+    <table class="detalle">${filas}</table>
+    <p class="fecha">San Salvador, <u>${d.fecha.dia}</u> de <u>${d.fecha.mes}</u> del <u>${d.fecha.anio}</u>.-</p>
+    <p>Recibí conforme el pago detallado anteriormente.</p>
+    <div class="firma-trab">${firmaDataUrl ? `<img src="${firmaDataUrl}" alt="Firma del trabajador">` : ''}</div>
+    <p class="linea">F: ______________________________</p>
+    <p class="linea">Nombre del trabajador: <u>${esc(r.nombre)}</u></p>
+    ${r.cargo ? `<p class="linea">Cargo: <u>${esc(r.cargo)}</u></p>` : ''}
+    <div class="autoriza">
+      <img src="/firma-autoriza.png" alt="Firma Ing. José Othmaro Morales Urbina">
+      <b>Ing. José Othmaro Morales Urbina</b><span>NIT: 0715-250560-002-1</span><i>Autoriza</i>
+    </div>
+    <footer class="pie">${esc(DIRECCION)}</footer>
+  </article>`;
+}
+
+export const RECIBO_CSS = `
+.hoja{background:#fff;color:#000;max-width:816px;margin:0 auto;padding:28px 22px;font:15px/1.45 Arial,Helvetica,sans-serif;box-shadow:0 1px 6px rgba(0,0,0,.15)}
+.membrete{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 8px;margin-bottom:22px}
+.ipmr{color:#BD1003;font:bold clamp(38px,11vw,52px)/1 "Bookman Old Style",Georgia,"Times New Roman",serif}
+.razon{font-weight:bold;font-size:clamp(11px,3.4vw,18px);text-decoration:underline;text-decoration-color:red;text-underline-offset:3px}
+.por{text-align:center;text-decoration:underline;font-size:17px;margin:0 0 14px}
+.cuerpo{text-align:justify}
+@media (max-width:600px){.cuerpo{text-align:left}}
+.detalle{width:100%;border-collapse:collapse;margin:14px 0 26px}
+.detalle td{padding:3px 0;vertical-align:top}
+.detalle .num{text-align:right;white-space:nowrap;padding-left:12px}
+.detalle .sang{padding-left:clamp(12px,5vw,38px)}
+.detalle .menos{display:inline-block;width:2.2em}
+.detalle .tot span{font-weight:bold;text-decoration:underline}
+.detalle .vacia td{height:10px}
+.fecha{margin:0 0 18px}
+.firma-trab{height:84px;display:flex;align-items:flex-end;padding-left:14px}
+.firma-trab img{max-height:84px;max-width:240px}
+.linea{margin:0 0 4px}
+.autoriza{display:flex;flex-direction:column;margin-top:26px}
+.autoriza img{width:96px;height:auto}
+.pie{border-top:1.5px solid red;margin-top:30px;padding-top:6px;text-align:center;font-size:11px}
+`;

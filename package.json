@@ -1,0 +1,19 @@
+{
+  "name": "recibos-ipmr",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server.js",
+    "test": "node test.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.126.0",
+    "express": "^5.2.1",
+    "nodemailer": "^10.0.10",
+    "pdfkit": "^0.20.2"
+  }
+}

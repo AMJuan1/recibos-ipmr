@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="es-SV">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Recibos IPMR — Administración</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;background:#f3f2ef;color:#1b1b1b;font:14px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  header{display:flex;align-items:baseline;gap:12px;padding:12px 20px;background:#fff;border-bottom:3px solid #a30f0f}
+  header h1{margin:0;font-size:18px}
+  header .ipmr{color:#a30f0f;font:bold 28px Georgia,serif}
+  header button{margin-left:auto}
+  main{max-width:1280px;margin:0 auto;padding:16px 20px 60px}
+  section{background:#fff;border-radius:8px;padding:16px;margin-bottom:18px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+  h2{margin:0 0 12px;font-size:16px}
+  button,.btn{font:inherit;border:1px solid #bbb;background:#fff;border-radius:6px;padding:6px 12px;cursor:pointer;color:inherit;text-decoration:none;white-space:nowrap}
+  button.pri{background:#a30f0f;border-color:#a30f0f;color:#fff}
+  button:disabled{opacity:.5;cursor:wait}
+  input,select{font:inherit;padding:5px 6px;border:1px solid #bbb;border-radius:5px;background:#fff;min-width:0}
+  .fila{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin-bottom:12px}
+  .fila label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:#555}
+  .scroll{overflow-x:auto}
+  table{border-collapse:collapse;width:100%}
+  th,td{padding:5px 6px;border-bottom:1px solid #e6e4e0;text-align:left;vertical-align:middle}
+  th{font-size:12px;color:#555;font-weight:600;background:#faf9f7;position:sticky;top:0}
+  td.n,th.n{text-align:right}
+  #revision input[type=number]{width:88px;text-align:right}
+  #revision input.nombre{width:250px}
+  #revision input.cargo{width:170px}
+  .estado{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:600}
+  .pend{background:#fff3cd;color:#7a5a00}
+  .firm{background:#d8f0de;color:#1d6b33}
+  .err{color:#a30f0f}
+  .msg{min-height:1.4em;margin:8px 0 0}
+  .acciones{display:flex;gap:6px}
+  .resumen{color:#555;margin-left:auto}
+  #login{max-width:340px;margin:80px auto}
+  #login input{width:100%;margin:8px 0}
+</style>
+</head>
+<body>
+<header><span class="ipmr">IPMR</span><h1>Recibos de pago</h1><button id="salir" hidden>Salir</button></header>
+
+<main>
+  <section id="login" hidden>
+    <h2>Acceso de administrador</h2>
+    <form id="formLogin"><input type="password" id="clave" placeholder="Contraseña" autocomplete="current-password" required>
+      <button class="pri" style="width:100%">Entrar</button></form>
+    <p class="msg err" id="msgLogin"></p>
+  </section>
+
+  <div id="app" hidden>
+    <section>
+      <h2>1. Nueva quincena</h2>
+      <div class="fila">
+        <label>Planilla (PDF)<input type="file" id="pdf" accept="application/pdf"></label>
+        <button id="extraer" class="pri">Extraer trabajadores</button>
+        <button id="agregar">+ Agregar fila manual</button>
+      </div>
+      <div class="fila">
+        <label>Día inicio<input type="number" id="diaInicio" min="1" max="31" value="1" style="width:70px"></label>
+        <label>Día fin<input type="number" id="diaFin" min="1" max="31" value="15" style="width:70px"></label>
+        <label>Mes<select id="mes"></select></label>
+        <label>Año<input type="number" id="anio" style="width:80px"></label>
+        <label>Fecha de emisión<input type="date" id="fechaEmision"></label>
+      </div>
+      <div class="scroll">
+        <table id="revision">
+          <thead><tr><th><input type="checkbox" id="todos" checked title="Incluir todos"></th><th>Nombre</th><th>Proyecto</th><th>Cargo</th>
+            <th class="n">Salario</th><th class="n">ISSS</th><th class="n">AFP</th><th class="n">Renta sal.</th>
+            <th class="n">Viáticos</th><th class="n">Renta viát.</th><th class="n">Total</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="fila" style="margin-top:12px">
+        <button id="generar" class="pri" disabled>Generar recibos y links</button>
+        <span class="resumen" id="resumenRev"></span>
+      </div>
+      <p class="msg" id="msgNueva"></p>
+    </section>
+
+    <section>
+      <div class="fila">
+        <h2 style="margin:0">2. Estado de recibos</h2>
+        <label>Período<select id="filtro"></select></label>
+        <label>Proyecto<select id="filtroProy"><option value="">Todos</option><option>Changallo</option><option>Italia</option><option>Oficina</option></select></label>
+        <button id="refrescar">Actualizar</button>
+        <span class="resumen" id="resumenEstado"></span>
+      </div>
+      <div class="scroll">
+        <table id="estado">
+          <thead><tr><th>Nombre</th><th>Proyecto</th><th class="n">Total</th><th>Estado</th><th>Correo</th><th>Acciones</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="msg" id="msgEstado"></p>
+    </section>
+  </div>
+</main>
+
+<script>
+const MESES = ['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO','AGOSTO','SEPTIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE'];
+const PROYECTOS = ['Changallo', 'Italia', 'Oficina'];
+const CAMPOS = ['salario', 'isss', 'afp', 'rentaSalario', 'viaticos', 'rentaViaticos'];
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
+const dinero = n => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const c = v => Math.round((+v || 0) * 100);
+const totalDe = t => (c(t.salario) - c(t.isss) - c(t.afp) - c(t.rentaSalario) + c(t.viaticos) - c(t.rentaViaticos)) / 100;
+const link = token => `${location.origin}/recibo/${token}`;
+
+async function api(url, opts = {}) {
+  const res = await fetch(url, { ...opts, headers: { 'Content-Type': 'application/json' }, body: opts.body && JSON.stringify(opts.body) });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 401 && url !== '/api/login') { mostrarLogin(); throw new Error('Sesión expirada'); }
+  if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+  return data;
+}
+
+// ---------- sesión ----------
+function mostrarLogin() { $('login').hidden = false; $('app').hidden = true; $('salir').hidden = true; }
+function mostrarApp() { $('login').hidden = true; $('app').hidden = false; $('salir').hidden = false; cargarEstado(); }
+$('formLogin').onsubmit = async e => {
+  e.preventDefault();
+  try { await api('/api/login', { method: 'POST', body: { password: $('clave').value } }); $('clave').value = ''; mostrarApp(); }
+  catch (err) { $('msgLogin').textContent = err.message; }
+};
+$('salir').onclick = async () => { await api('/api/logout', { method: 'POST' }); mostrarLogin(); };
+
+// ---------- nueva quincena ----------
+$('mes').innerHTML = MESES.map(m => `<option>${m}</option>`).join('');
+const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/El_Salvador' });
+$('fechaEmision').value = hoy;
+$('anio').value = hoy.slice(0, 4);
+$('mes').value = MESES[+hoy.slice(5, 7) - 1];
+
+let filas = [];
+
+function pintarRevision() {
+  $('revision').tBodies[0].innerHTML = filas.map((t, i) => `<tr data-i="${i}">
+    <td><input type="checkbox" data-k="incluir" ${t.incluir ? 'checked' : ''}></td>
+    <td><input class="nombre" data-k="nombre" value="${esc(t.nombre)}"></td>
+    <td><select data-k="proyecto">${PROYECTOS.map(p => `<option ${p === t.proyecto ? 'selected' : ''}>${p}</option>`).join('')}</select></td>
+    <td><input class="cargo" data-k="cargo" value="${esc(t.cargo)}"></td>
+    ${CAMPOS.map(k => `<td class="n"><input type="number" step="0.01" min="0" data-k="${k}" value="${t[k]}"></td>`).join('')}
+    <td class="n total">${dinero(totalDe(t))}</td>
+    <td><button data-quitar title="Quitar fila">✕</button></td></tr>`).join('');
+  resumenRevision();
+}
+
+function resumenRevision() {
+  const sel = filas.filter(t => t.incluir);
+  $('resumenRev').textContent = filas.length ? `${sel.length} de ${filas.length} seleccionados · Total ${dinero(sel.reduce((s, t) => s + totalDe(t), 0))}` : '';
+  $('generar').disabled = !sel.length;
+}
+
+$('revision').addEventListener('input', e => {
+  const tr = e.target.closest('tr[data-i]'), k = e.target.dataset.k;
+  if (!tr || !k) return;
+  const t = filas[tr.dataset.i];
+  t[k] = k === 'incluir' ? e.target.checked : e.target.value;
+  tr.querySelector('.total').textContent = dinero(totalDe(t));
+  resumenRevision();
+});
+$('revision').addEventListener('click', e => {
+  if (!e.target.matches('[data-quitar]')) return;
+  filas.splice(e.target.closest('tr').dataset.i, 1);
+  pintarRevision();
+});
+$('todos').onchange = e => { filas.forEach(t => t.incluir = e.target.checked); pintarRevision(); };
+$('agregar').onclick = () => {
+  filas.push({ incluir: true, nombre: '', proyecto: 'Changallo', cargo: '', salario: 0, isss: 0, afp: 0, rentaSalario: 0, viaticos: 0, rentaViaticos: 0 });
+  pintarRevision();
+};
+
+$('extraer').onclick = async () => {
+  const archivo = $('pdf').files[0];
+  if (!archivo) return $('msgNueva').textContent = 'Seleccione el PDF de la planilla.';
+  $('extraer').disabled = true;
+  $('msgNueva').textContent = 'Leyendo la planilla… (puede tardar hasta un minuto)';
+  try {
+    const b64 = await new Promise((ok, fail) => {
+      const fr = new FileReader();
+      fr.onload = () => ok(fr.result.split(',')[1]); fr.onerror = fail;
+      fr.readAsDataURL(archivo);
+    });
+    const { periodo, trabajadores } = await api('/api/extraer', { method: 'POST', body: { pdf: b64 } });
+    $('diaInicio').value = periodo.diaInicio; $('diaFin').value = periodo.diaFin; $('mes').value = periodo.mes; $('anio').value = periodo.anio;
+    filas = trabajadores.map(t => ({ incluir: totalDe(t) > 0, ...t }));
+    pintarRevision();
+    $('msgNueva').textContent = `Se extrajeron ${filas.length} trabajadores. Revise nombres, montos y período antes de generar.`;
+  } catch (err) {
+    $('msgNueva').textContent = err.message;
+  } finally { $('extraer').disabled = false; }
+};
+
+$('generar').onclick = async () => {
+  const sel = filas.filter(t => t.incluir);
+  const periodo = { diaInicio: +$('diaInicio').value, diaFin: +$('diaFin').value, mes: $('mes').value, anio: +$('anio').value };
+  if (!confirm(`¿Generar ${sel.length} recibos del ${periodo.diaInicio} al ${periodo.diaFin} de ${periodo.mes} ${periodo.anio}?`)) return;
+  $('generar').disabled = true;
+  try {
+    const trabajadores = sel.map(({ incluir, ...t }) => ({ ...t, ...Object.fromEntries(CAMPOS.map(k => [k, +t[k] || 0])) }));
+    const r = await api('/api/recibos', { method: 'POST', body: { periodo, fechaEmision: $('fechaEmision').value, trabajadores } });
+    filas = []; pintarRevision();
+    $('msgNueva').textContent = `✔ ${r.creados} recibo${r.creados === 1 ? '' : 's'} creado${r.creados === 1 ? '' : 's'}. Copie los links en la sección 2.`;
+    await cargarEstado(`${periodo.diaInicio} al ${periodo.diaFin} ${periodo.mes} ${periodo.anio}`);
+  } catch (err) {
+    $('msgNueva').textContent = err.message; resumenRevision();
+  }
+};
+
+// ---------- estado ----------
+let recibos = [];
+const periodoDe = r => `${r.diaInicio} al ${r.diaFin} ${r.mes} ${r.anio}`;
+
+async function cargarEstado(seleccionar) {
+  try { recibos = await api('/api/recibos'); } catch (err) { return $('msgEstado').textContent = err.message; }
+  const periodos = [...new Set(recibos.map(periodoDe))];
+  const actual = seleccionar || $('filtro').value || periodos[0];
+  $('filtro').innerHTML = periodos.map(p => `<option ${p === actual ? 'selected' : ''}>${esc(p)}</option>`).join('') || '<option value="">(sin recibos)</option>';
+  pintarEstado();
+}
+
+function pintarEstado() {
+  const lista = recibos.filter(r => periodoDe(r) === $('filtro').value && (!$('filtroProy').value || r.proyecto === $('filtroProy').value));
+  const firmados = lista.filter(r => r.firmadoEn).length;
+  $('resumenEstado').textContent = lista.length ? `${firmados} de ${lista.length} firmados` : '';
+  $('estado').tBodies[0].innerHTML = lista.map(r => {
+    const texto = `Hola ${r.nombre.split(' ')[0]}, este es tu recibo de pago IPMR del ${r.diaInicio} al ${r.diaFin} de ${r.mes.toLowerCase()} ${r.anio}. Ábrelo y fírmalo aquí: ${link(r.token)}`;
+    return `<tr data-token="${r.token}">
+      <td>${esc(r.nombre)}<br><small style="color:#777">${esc(r.cargo)}</small></td>
+      <td>${esc(r.proyecto)}</td>
+      <td class="n">${dinero(r.total)}</td>
+      <td>${r.firmadoEn ? `<span class="estado firm">Firmado</span><br><small>${esc(r.firmadoEnTexto)}</small>` : '<span class="estado pend">Pendiente de firma</span>'}</td>
+      <td>${r.correoEnviadoEn ? '✔ Enviado' : r.correoError ? `<span class="err" title="${esc(r.correoError)}">Falló</span> <button data-accion="reenviar">Reenviar</button>` : '—'}</td>
+      <td><div class="acciones">
+        <button data-accion="copiar" data-texto="${esc(link(r.token))}">Copiar link</button>
+        <a class="btn" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(texto)}">WhatsApp</a>
+        <a class="btn" target="_blank" href="/api/recibos/${r.token}/pdf">PDF</a>
+        ${r.firmadoEn ? '' : '<button data-accion="eliminar" title="Eliminar recibo pendiente">Eliminar</button>'}
+      </div></td></tr>`;
+  }).join('');
+}
+
+$('filtro').onchange = $('filtroProy').onchange = pintarEstado;
+$('refrescar').onclick = () => cargarEstado();
+$('estado').addEventListener('click', async e => {
+  const b = e.target.closest('button[data-accion]');
+  if (!b) return;
+  const token = b.closest('tr').dataset.token;
+  $('msgEstado').textContent = '';
+  try {
+    if (b.dataset.accion === 'copiar') {
+      await navigator.clipboard.writeText(b.dataset.texto);
+      b.textContent = '✔ Copiado'; setTimeout(() => b.textContent = 'Copiar link', 1500);
+    } else if (b.dataset.accion === 'eliminar') {
+      if (!confirm('¿Eliminar este recibo pendiente? El link dejará de funcionar.')) return;
+      await api(`/api/recibos/${token}`, { method: 'DELETE' }); await cargarEstado();
+    } else if (b.dataset.accion === 'reenviar') {
+      b.disabled = true; await api(`/api/recibos/${token}/reenviar`, { method: 'POST' }); await cargarEstado();
+    }
+  } catch (err) { $('msgEstado').textContent = err.message; b.disabled = false; }
+});
+
+api('/api/recibos').then(mostrarApp, () => {});
+</script>
+</body>
+</html>
