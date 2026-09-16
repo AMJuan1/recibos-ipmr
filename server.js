@@ -3,13 +3,11 @@ import { DatabaseSync } from 'node:sqlite';
 import { randomBytes, createHmac, timingSafeEqual } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import nodemailer from 'nodemailer';
 import { extraerPlanilla, mapear } from './planilla.js';
 import { PROYECTOS, MESES, calcular, dinero, generarPdf, reciboHtml, RECIBO_CSS, esc, nombreArchivo } from './recibo.js';
 
 const {
   PORT = 3000, DATA_DIR = './data', ADMIN_PASSWORD, SESSION_SECRET = randomBytes(32).toString('hex'),
-  SMTP_HOST, SMTP_PORT = 465, SMTP_USER, SMTP_PASS, MAIL_FROM, MAIL_TO = 'juantony794@gmail.com',
 } = process.env;
 if (!ADMIN_PASSWORD) { console.error('Falta la variable de entorno ADMIN_PASSWORD'); process.exit(1); }
 
@@ -25,8 +23,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS recibos (
   subSalarioPlanilla REAL, subViaticosPlanilla REAL,
   diaInicio INTEGER NOT NULL, diaFin INTEGER NOT NULL, mes TEXT NOT NULL, anio INTEGER NOT NULL,
   fechaEmision TEXT NOT NULL, creadoEn TEXT NOT NULL,
-  firmadoEn TEXT, firmaIp TEXT, firmaDispositivo TEXT, firma BLOB,
-  correoEnviadoEn TEXT, correoError TEXT
+  firmadoEn TEXT, firmaIp TEXT, firmaDispositivo TEXT, firma BLOB
 )`);
 // Bases creadas antes de que el recibo tuviera IVA y descuento personal.
 for (const [col, tipo] of [['iva', 'REAL NOT NULL DEFAULT 0'], ['descuento', 'REAL NOT NULL DEFAULT 0'],
@@ -39,30 +36,6 @@ const buscar = token => {
   if (r?.firma) r.firma = Buffer.from(r.firma);
   return r;
 };
-
-// ---------- correo ----------
-const transporte = SMTP_HOST && nodemailer.createTransport({
-  host: SMTP_HOST, port: Number(SMTP_PORT), secure: Number(SMTP_PORT) === 465, auth: { user: SMTP_USER, pass: SMTP_PASS },
-});
-
-async function enviarCorreo(r) {
-  try {
-    if (!transporte) throw new Error('SMTP no configurado');
-    const periodo = `${r.diaInicio} al ${r.diaFin} de ${r.mes} ${r.anio}`;
-    await transporte.sendMail({
-      from: MAIL_FROM || SMTP_USER, to: MAIL_TO,
-      subject: `Recibo firmado — ${r.nombre} — ${r.proyecto} — ${periodo}`,
-      text: `${r.nombre} (${r.proyecto}) firmó su recibo del ${periodo} por $${dinero(calcular(r).total)}.\nFecha de firma: ${fechaSV(r.firmadoEn)}\n`,
-      attachments: [{ filename: nombreArchivo(r), content: await generarPdf(r) }],
-    });
-    db.prepare('UPDATE recibos SET correoEnviadoEn = ?, correoError = NULL WHERE token = ?').run(new Date().toISOString(), r.token);
-    return null;
-  } catch (e) {
-    console.error('Error enviando correo', r.token, e.message);
-    db.prepare('UPDATE recibos SET correoError = ? WHERE token = ?').run(e.message, r.token);
-    return e.message;
-  }
-}
 
 const fechaSV = iso => new Date(iso).toLocaleString('es-SV', { timeZone: 'America/El_Salvador', dateStyle: 'short', timeStyle: 'short' });
 
@@ -160,7 +133,7 @@ app.post('/api/recibos', (req, res) => {
 
 app.get('/api/recibos', (req, res) => {
   const filas = db.prepare(`SELECT token, nombre, proyecto, cargo, ${[...CAMPOS, ...SUBTOTALES].join(', ')},
-    diaInicio, diaFin, mes, anio, fechaEmision, creadoEn, firmadoEn, firmaIp, firmaDispositivo, correoEnviadoEn, correoError
+    diaInicio, diaFin, mes, anio, fechaEmision, creadoEn, firmadoEn, firmaIp, firmaDispositivo
     FROM recibos ORDER BY anio DESC, creadoEn DESC, proyecto, nombre`).all();
   res.json(filas.map(r => ({ ...r, total: calcular(r).total, firmadoEnTexto: r.firmadoEn && fechaSV(r.firmadoEn) })));
 });
@@ -168,13 +141,6 @@ app.get('/api/recibos', (req, res) => {
 app.delete('/api/recibos/:token', (req, res) => {
   const { changes } = db.prepare('DELETE FROM recibos WHERE token = ? AND firmadoEn IS NULL').run(req.params.token);
   changes ? res.json({ ok: true }) : res.status(409).json({ error: 'No existe o ya fue firmado' });
-});
-
-app.post('/api/recibos/:token/reenviar', async (req, res) => {
-  const r = buscar(req.params.token);
-  if (!r?.firmadoEn) return res.status(409).json({ error: 'El recibo no está firmado' });
-  const error = await enviarCorreo(r);
-  error ? res.status(502).json({ error }) : res.json({ ok: true });
 });
 
 app.get('/api/recibos/:token/pdf', async (req, res) => {
@@ -220,7 +186,6 @@ app.post('/recibo/:token/firmar', async (req, res) => {
   const { changes } = db.prepare('UPDATE recibos SET firma = ?, firmadoEn = ?, firmaIp = ?, firmaDispositivo = ? WHERE token = ? AND firmadoEn IS NULL')
     .run(firma, firmadoEn, req.ip, String(req.get('user-agent') || '').slice(0, 300), r.token);
   if (!changes) return res.status(409).json({ error: 'Este recibo ya fue firmado' });
-  await enviarCorreo({ ...r, firma, firmadoEn });
   res.json({ ok: true });
 });
 

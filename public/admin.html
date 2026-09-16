@@ -93,7 +93,7 @@
       </div>
       <div class="scroll">
         <table id="estado">
-          <thead><tr><th>Nombre</th><th>Proyecto</th><th class="n">Total</th><th>Estado</th><th>Correo</th><th>Acciones</th></tr></thead>
+          <thead><tr><th>Nombre</th><th>Proyecto</th><th class="n">Total</th><th>Estado</th><th>Acciones</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -245,7 +245,6 @@ function pintarEstado() {
       <td>${esc(r.proyecto)}</td>
       <td class="n">${dinero(r.total)}</td>
       <td>${r.firmadoEn ? `<span class="estado firm">Firmado</span><br><small>${esc(r.firmadoEnTexto)}</small>` : '<span class="estado pend">Pendiente de firma</span>'}</td>
-      <td>${r.correoEnviadoEn ? '✔ Enviado' : r.correoError ? `<span class="err" title="${esc(r.correoError)}">Falló</span> <button data-accion="reenviar">Reenviar</button>` : '—'}</td>
       <td><div class="acciones">
         <button data-accion="copiar" data-texto="${esc(link(r.token))}">Copiar link</button>
         <a class="btn" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(texto)}">WhatsApp</a>
@@ -269,8 +268,6 @@ $('estado').addEventListener('click', async e => {
     } else if (b.dataset.accion === 'eliminar') {
       if (!confirm('¿Eliminar este recibo pendiente? El link dejará de funcionar.')) return;
       await api(`/api/recibos/${token}`, { method: 'DELETE' }); await cargarEstado();
-    } else if (b.dataset.accion === 'reenviar') {
-      b.disabled = true; await api(`/api/recibos/${token}/reenviar`, { method: 'POST' }); await cargarEstado();
     }
   } catch (err) { $('msgEstado').textContent = err.message; b.disabled = false; }
 });
