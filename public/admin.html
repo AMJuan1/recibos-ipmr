@@ -72,7 +72,7 @@
         <table id="revision">
           <thead><tr><th><input type="checkbox" id="todos" checked title="Incluir todos"></th><th>Nombre</th><th>Proyecto</th><th>Cargo</th>
             <th class="n">Salario</th><th class="n">IVA</th><th class="n">Descuento</th><th class="n">ISSS</th><th class="n">AFP</th><th class="n">Renta sal.</th>
-            <th class="n">Viáticos</th><th class="n">Renta viát.</th><th class="n">Total</th><th></th></tr></thead>
+            <th class="n">Viáticos</th><th class="n">Renta viát.</th><th class="n" title="Viene de la planilla; si edita un monto se recalcula con las líneas">Total</th><th></th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -110,7 +110,10 @@ const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
 const dinero = n => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const c = v => Math.round((+v || 0) * 100);
-const totalDe = t => (c(t.salario) + c(t.iva) - c(t.descuento) - c(t.isss) - c(t.afp) - c(t.rentaSalario) + c(t.viaticos) - c(t.rentaViaticos)) / 100;
+// Si la planilla trajo sus subtotales, mandan ellos (Excel redondea con más decimales de los que imprime).
+const totalDe = t => t.subSalarioPlanilla != null
+  ? (c(t.subSalarioPlanilla) + c(t.subViaticosPlanilla)) / 100
+  : (c(t.salario) + c(t.iva) - c(t.descuento) - c(t.isss) - c(t.afp) - c(t.rentaSalario) + c(t.viaticos) - c(t.rentaViaticos)) / 100;
 const link = token => `${location.origin}/recibo/${token}`;
 
 async function api(url, opts = {}) {
@@ -163,6 +166,8 @@ $('revision').addEventListener('input', e => {
   if (!tr || !k) return;
   const t = filas[tr.dataset.i];
   t[k] = k === 'incluir' ? e.target.checked : e.target.value;
+  // Si se edita un monto, el total deja de venir de la planilla y se recalcula con las líneas.
+  if (CAMPOS.includes(k)) { t.subSalarioPlanilla = null; t.subViaticosPlanilla = null; }
   tr.querySelector('.total').textContent = dinero(totalDe(t));
   resumenRevision();
 });

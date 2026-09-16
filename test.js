@@ -31,6 +31,16 @@ const mapeado = mapear({
   ],
 });
 assert.deepEqual(mapeado.periodo, { diaInicio: 1, diaFin: 15, mes: 'SEPTIEMBRE', anio: 2026 });
+// El total del recibo tiene que ser el de la planilla, aunque las líneas impresas sumen un centavo menos.
+const redondeo = mapear({ planillas: [], personas: [{ proyecto: 'PLANILLA GENERAL', periodo: '1RA QUINCENA SEPTIEMBRE 2026',
+  empleado: 'ANGELICA', puesto: 'GTE.',
+  montos: { 'SALARIO QUINCENAL': 450, 'ISSS 3%': 13.5, 'AFP 7,25%': 32.63, RENTA: 15.05, 'SALARIO LIQUIDO': 388.83,
+            'VIÁTICOS': 200, RENTA_2: 20, 'TOTAL MENOS DESCUENTO': 180, 'TOTAL A PAGAR': 568.83 }, total_pagado: 568.83 }] }).trabajadores[0];
+assert.equal(calcular(redondeo).total, 568.83);
+assert.equal(calcular(redondeo).subSalario, 388.83);
+assert.equal(redondeo.aviso, undefined);
+// Si se edita un monto (sin subtotales de la planilla) se recalcula con las líneas.
+assert.equal(calcular({ ...redondeo, subSalarioPlanilla: null, subViaticosPlanilla: null }).total, 568.82);
 assert.equal(mapeado.trabajadores[0].proyecto, 'Changallo');
 assert.equal(mapeado.trabajadores[0].aviso, undefined); // el IVA ya va como línea del recibo
 assert.equal(mapeado.trabajadores[0].iva, 65);

@@ -10,9 +10,14 @@ const DIRECCION = 'Av. Artillería 9-A, Col. Manuel José Arce, Distrito de San 
 // ---------- montos ----------
 const cents = n => Math.round((Number(n) || 0) * 100); // iva y descuento son opcionales
 
+// Los subtotales de la planilla mandan cuando vienen (Excel calcula con más decimales de los que
+// imprime: AFP 32.625 se muestra 32.63, así que sumar las líneas impresas puede dar un centavo menos).
+const dePlanilla = v => (v === null || v === undefined || v === '' ? null : cents(v));
+
 export function calcular(r) {
-  const subSalario = cents(r.salario) + cents(r.iva) - cents(r.isss) - cents(r.afp) - cents(r.rentaSalario) - cents(r.descuento);
-  const subViaticos = cents(r.viaticos) - cents(r.rentaViaticos);
+  const subSalario = dePlanilla(r.subSalarioPlanilla)
+    ?? cents(r.salario) + cents(r.iva) - cents(r.isss) - cents(r.afp) - cents(r.rentaSalario) - cents(r.descuento);
+  const subViaticos = dePlanilla(r.subViaticosPlanilla) ?? cents(r.viaticos) - cents(r.rentaViaticos);
   return { subSalario: subSalario / 100, subViaticos: subViaticos / 100, total: (subSalario + subViaticos) / 100 };
 }
 

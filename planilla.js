@@ -55,6 +55,19 @@ export function montosDe(montos) {
   };
 }
 
+// La planilla manda: Excel calcula con más decimales de los que imprime (AFP 32.625 -> 32.63),
+// así que los subtotales se toman de sus columnas y no se recalculan. Solo se usan si suman el total de la hoja.
+export function subtotalesDe(montos, lineas, totalPlanilla) {
+  const clave = re => Object.keys(montos).find(k => re.test(k));
+  const valor = k => (k === undefined ? null : Number(montos[k]) || 0);
+  const subViaticos = valor(clave(/^TOTAL MENOS DESCUENTO/i))
+    ?? Math.round((lineas.viaticos - lineas.rentaViaticos) * 100) / 100;
+  const subSalario = valor(clave(/^SALARIO L[IÍ]QUIDO/i))
+    ?? Math.round((totalPlanilla - subViaticos) * 100) / 100;
+  const cuadra = Math.round((subSalario + subViaticos - totalPlanilla) * 100) === 0;
+  return cuadra ? { subSalarioPlanilla: subSalario, subViaticosPlanilla: subViaticos } : null;
+}
+
 export function mapear(datos) {
   const avisos = [];
   for (const p of datos.planillas || [])
@@ -63,16 +76,18 @@ export function mapear(datos) {
   const periodos = new Set();
   const trabajadores = (datos.personas || []).map(p => {
     periodos.add(p.periodo);
+    const lineas = montosDe(p.montos || {});
+    const pagado = Number(p.total_pagado) || 0;
     const t = {
       nombre: p.empleado, proyecto: proyectoDe(p.proyecto), cargo: p.puesto || '',
-      ...montosDe(p.montos || {}),
+      ...lineas, ...subtotalesDe(p.montos || {}, lineas, pagado),
     };
-    // El recibo no tiene línea de IVA ni de descuento personal: si la planilla las usa, el total no coincide.
-    const total = calcular(t).total, pagado = Number(p.total_pagado) || 0;
-    const centavos = Math.round((total - pagado) * 100);
-    if (centavos) t.aviso = Math.abs(centavos) <= 2
-      ? `Diferencia de redondeo de $${(Math.abs(centavos) / 100).toFixed(2)} contra la planilla ($${pagado.toFixed(2)}).`
-      : `El total del recibo ($${total.toFixed(2)}) no coincide con la planilla ($${pagado.toFixed(2)}): revise IVA o descuentos.`;
+    // Si las líneas del recibo no llegan al total de la planilla, hay una columna que el recibo no contempla.
+    const total = calcular(t).total, sinSubtotales = calcular({ ...t, subSalarioPlanilla: null, subViaticosPlanilla: null }).total;
+    if (Math.round((total - pagado) * 100))
+      t.aviso = `El total del recibo ($${total.toFixed(2)}) no coincide con la planilla ($${pagado.toFixed(2)}): revise las columnas de esa fila.`;
+    else if (Math.abs(Math.round((sinSubtotales - pagado) * 100)) > 2)
+      t.aviso = `Las líneas suman $${sinSubtotales.toFixed(2)} pero la planilla paga $${pagado.toFixed(2)}: revise las columnas de esa fila.`;
     return t;
   });
 
