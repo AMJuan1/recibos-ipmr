@@ -1,5 +1,5 @@
 node_modules/
 data/
 .env
-muestra.pdf
+muestra*.pdf
 __pycache__/
