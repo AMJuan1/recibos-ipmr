@@ -17,6 +17,7 @@ App web para emitir los recibos de cada quincena, enviar un link único por trab
 | `public/admin.html` | Panel del administrador |
 | `public/firma.js`, `public/trabajador.css` | Cuadro de firma y estilos de la página del trabajador |
 | `public/firma-autoriza.png` | Firma escaneada del Ing. José Othmaro Morales Urbina |
+| `instalar-linux.sh` | Instalador para el equipo propio: dependencias, .env y servicio systemd |
 | `test.js` | Autoverificación (`npm test`): monto en letras, cálculos y que el recibo quepa en una página |
 
 ## Correr en local
@@ -30,23 +31,25 @@ npm start                                   # http://localhost:3000/admin
 
 Variables de entorno: ver `.env.example`. Si Python no está en el PATH, apuntalo con `PYTHON=` (ruta al ejecutable); sin él la app funciona pero hay que agregar los trabajadores con *+ Agregar fila manual*.
 
-## Desplegar en una PC propia (gratis, recomendado si hay un equipo siempre encendido)
+## Desplegar en un equipo propio (gratis, si hay una máquina siempre encendida)
 
-En la PC que queda encendida, con Node 22.13+, Python 3 y Git instalados:
+En el equipo Linux, con Node 22.13+, Python 3 y Git:
 
-```powershell
-powershell -ExecutionPolicy Bypass -File instalar-windows.ps1
+```bash
+git clone https://github.com/AMJuan1/recibos-ipmr.git
+sudo bash recibos-ipmr/instalar-linux.sh
 ```
 
-Descarga el código, instala dependencias, pide la contraseña del panel y registra una tarea programada
-que arranca la app con el equipo (escuchando solo en `127.0.0.1`). Después, una sola vez:
+Instala dependencias, pide la contraseña del panel y deja la app como servicio systemd
+(`recibos-ipmr`), escuchando solo en `127.0.0.1`. Después, una sola vez:
 
-```powershell
-tailscale funnel --bg 3000
+```bash
+sudo tailscale funnel --bg 3000
 ```
 
-Eso publica la app en `https://<equipo>.<tailnet>.ts.net` con HTTPS — esa URL es la del panel y la que
-llevan los links de los trabajadores. Guardá de vez en cuando una copia de `dataecibos.db`.
+Eso la publica en `https://<equipo>.<tailnet>.ts.net` con HTTPS — esa URL es la del panel y la que
+llevan los links de los trabajadores. Para actualizar, volvé a correr el script.
+Guardá de vez en cuando una copia de `data/recibos.db`.
 
 ## Desplegar (Render)
 
