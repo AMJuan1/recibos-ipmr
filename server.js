@@ -7,7 +7,7 @@ import { extraerPlanilla, mapear } from './planilla.js';
 import { PROYECTOS, MESES, calcular, dinero, generarPdf, reciboHtml, RECIBO_CSS, esc, nombreArchivo } from './recibo.js';
 
 const {
-  PORT = 3000, DATA_DIR = './data', ADMIN_PASSWORD, SESSION_SECRET = randomBytes(32).toString('hex'),
+  PORT = 3000, HOST = '0.0.0.0', DATA_DIR = './data', ADMIN_PASSWORD, SESSION_SECRET = randomBytes(32).toString('hex'),
 } = process.env;
 if (!ADMIN_PASSWORD) { console.error('Falta la variable de entorno ADMIN_PASSWORD'); process.exit(1); }
 
@@ -195,4 +195,5 @@ app.get('/recibo/:token/pdf', async (req, res) => {
   res.type('pdf').set('Content-Disposition', `attachment; filename="${nombreArchivo(r)}"`).send(await generarPdf(r));
 });
 
-app.listen(PORT, () => console.log(`Recibos IPMR en http://localhost:${PORT}`));
+// HOST=127.0.0.1 cuando lo expone un túnel (Tailscale/Cloudflare): así no queda abierto en la red local.
+app.listen(PORT, HOST, () => console.log(`Recibos IPMR escuchando en ${HOST}:${PORT}`));

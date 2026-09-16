@@ -30,6 +30,24 @@ npm start                                   # http://localhost:3000/admin
 
 Variables de entorno: ver `.env.example`. Si Python no está en el PATH, apuntalo con `PYTHON=` (ruta al ejecutable); sin él la app funciona pero hay que agregar los trabajadores con *+ Agregar fila manual*.
 
+## Desplegar en una PC propia (gratis, recomendado si hay un equipo siempre encendido)
+
+En la PC que queda encendida, con Node 22.13+, Python 3 y Git instalados:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File instalar-windows.ps1
+```
+
+Descarga el código, instala dependencias, pide la contraseña del panel y registra una tarea programada
+que arranca la app con el equipo (escuchando solo en `127.0.0.1`). Después, una sola vez:
+
+```powershell
+tailscale funnel --bg 3000
+```
+
+Eso publica la app en `https://<equipo>.<tailnet>.ts.net` con HTTPS — esa URL es la del panel y la que
+llevan los links de los trabajadores. Guardá de vez en cuando una copia de `dataecibos.db`.
+
 ## Desplegar (Render)
 
 `render.yaml` ya está listo: se despliega con el `Dockerfile` (Node + Python, porque el extractor es Python) y un disco de 1 GB montado en `/var/data` (ahí vive `recibos.db`; un plan sin disco pierde los recibos en cada despliegue).
