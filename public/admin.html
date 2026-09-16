@@ -32,6 +32,9 @@
   .pend{background:#fff3cd;color:#7a5a00}
   .firm{background:#d8f0de;color:#1d6b33}
   .err{color:#a30f0f}
+  tr.aviso td{background:#fff6e5}
+  .aviso-icono{color:#a35c0f;cursor:help}
+  .avisos{margin:8px 0 0;padding-left:18px;color:#7a5a00}
   .msg{min-height:1.4em;margin:8px 0 0}
   .acciones{display:flex;gap:6px}
   .resumen{color:#555;margin-left:auto}
@@ -54,7 +57,7 @@
     <section>
       <h2>1. Nueva quincena</h2>
       <div class="fila">
-        <label>Planilla (PDF)<input type="file" id="pdf" accept="application/pdf"></label>
+        <label>Planilla (Excel o PDF)<input type="file" id="pdf" accept=".xlsx,.xls,.pdf"></label>
         <button id="extraer" class="pri">Extraer trabajadores</button>
         <button id="agregar">+ Agregar fila manual</button>
       </div>
@@ -138,14 +141,14 @@ $('mes').value = MESES[+hoy.slice(5, 7) - 1];
 let filas = [];
 
 function pintarRevision() {
-  $('revision').tBodies[0].innerHTML = filas.map((t, i) => `<tr data-i="${i}">
+  $('revision').tBodies[0].innerHTML = filas.map((t, i) => `<tr data-i="${i}" class="${t.aviso ? 'aviso' : ''}">
     <td><input type="checkbox" data-k="incluir" ${t.incluir ? 'checked' : ''}></td>
     <td><input class="nombre" data-k="nombre" value="${esc(t.nombre)}"></td>
     <td><select data-k="proyecto">${PROYECTOS.map(p => `<option ${p === t.proyecto ? 'selected' : ''}>${p}</option>`).join('')}</select></td>
     <td><input class="cargo" data-k="cargo" value="${esc(t.cargo)}"></td>
     ${CAMPOS.map(k => `<td class="n"><input type="number" step="0.01" min="0" data-k="${k}" value="${t[k]}"></td>`).join('')}
     <td class="n total">${dinero(totalDe(t))}</td>
-    <td><button data-quitar title="Quitar fila">✕</button></td></tr>`).join('');
+    <td>${t.aviso ? `<span class="aviso-icono" title="${esc(t.aviso)}">⚠</span> ` : ''}<button data-quitar title="Quitar fila">✕</button></td></tr>`).join('');
   resumenRevision();
 }
 
@@ -176,20 +179,23 @@ $('agregar').onclick = () => {
 
 $('extraer').onclick = async () => {
   const archivo = $('pdf').files[0];
-  if (!archivo) return $('msgNueva').textContent = 'Seleccione el PDF de la planilla.';
+  if (!archivo) return $('msgNueva').textContent = 'Seleccione el archivo de la planilla (.xlsx o .pdf).';
   $('extraer').disabled = true;
-  $('msgNueva').textContent = 'Leyendo la planilla… (puede tardar hasta un minuto)';
+  $('msgNueva').textContent = 'Leyendo la planilla…';
   try {
     const b64 = await new Promise((ok, fail) => {
       const fr = new FileReader();
       fr.onload = () => ok(fr.result.split(',')[1]); fr.onerror = fail;
       fr.readAsDataURL(archivo);
     });
-    const { periodo, trabajadores } = await api('/api/extraer', { method: 'POST', body: { pdf: b64 } });
-    $('diaInicio').value = periodo.diaInicio; $('diaFin').value = periodo.diaFin; $('mes').value = periodo.mes; $('anio').value = periodo.anio;
+    const { periodo, trabajadores, avisos } = await api('/api/extraer', { method: 'POST', body: { archivo: b64, nombre: archivo.name } });
+    if (periodo) { $('diaInicio').value = periodo.diaInicio; $('diaFin').value = periodo.diaFin; $('mes').value = periodo.mes; $('anio').value = periodo.anio; }
     filas = trabajadores.map(t => ({ incluir: totalDe(t) > 0, ...t }));
     pintarRevision();
-    $('msgNueva').textContent = `Se extrajeron ${filas.length} trabajadores. Revise nombres, montos y período antes de generar.`;
+    const conAviso = filas.filter(t => t.aviso).length;
+    $('msgNueva').innerHTML = `Se leyeron ${filas.length} trabajadores${periodo ? '' : ' (no se reconoció el período: complételo a mano)'}. Revise nombres, montos y período antes de generar.`
+      + (conAviso ? ` <b>${conAviso} fila${conAviso === 1 ? '' : 's'} con diferencias</b> (marcadas en amarillo).` : '')
+      + (avisos.length ? `<ul class="avisos">${avisos.map(a => `<li>${esc(a)}</li>`).join('')}</ul>` : '');
   } catch (err) {
     $('msgNueva').textContent = err.message;
   } finally { $('extraer').disabled = false; }
@@ -201,7 +207,7 @@ $('generar').onclick = async () => {
   if (!confirm(`¿Generar ${sel.length} recibos del ${periodo.diaInicio} al ${periodo.diaFin} de ${periodo.mes} ${periodo.anio}?`)) return;
   $('generar').disabled = true;
   try {
-    const trabajadores = sel.map(({ incluir, ...t }) => ({ ...t, ...Object.fromEntries(CAMPOS.map(k => [k, +t[k] || 0])) }));
+    const trabajadores = sel.map(({ incluir, aviso, ...t }) => ({ ...t, ...Object.fromEntries(CAMPOS.map(k => [k, +t[k] || 0])) }));
     const r = await api('/api/recibos', { method: 'POST', body: { periodo, fechaEmision: $('fechaEmision').value, trabajadores } });
     filas = []; pintarRevision();
     $('msgNueva').textContent = `✔ ${r.creados} recibo${r.creados === 1 ? '' : 's'} creado${r.creados === 1 ? '' : 's'}. Copie los links en la sección 2.`;

@@ -4,7 +4,7 @@ import { randomBytes, createHmac, timingSafeEqual } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import nodemailer from 'nodemailer';
-import Anthropic from '@anthropic-ai/sdk';
+import { extraerPlanilla, mapear } from './planilla.js';
 import { PROYECTOS, MESES, calcular, dinero, generarPdf, reciboHtml, RECIBO_CSS, esc, nombreArchivo } from './recibo.js';
 
 const {
@@ -96,60 +96,18 @@ app.post('/api/login', (req, res) => {
 app.post('/api/logout', (req, res) => res.clearCookie('admin').json({ ok: true }));
 app.use('/api', (req, res, next) => esAdmin(req) ? next() : res.status(401).json({ error: 'No autorizado' }));
 
-// ---------- extracción de planilla con Claude ----------
-const num = { type: 'number' };
-const ESQUEMA = {
-  type: 'object', additionalProperties: false, required: ['periodo', 'trabajadores'],
-  properties: {
-    periodo: {
-      type: 'object', additionalProperties: false, required: ['diaInicio', 'diaFin', 'mes', 'anio'],
-      properties: { diaInicio: { type: 'integer' }, diaFin: { type: 'integer' }, mes: { type: 'string', enum: MESES }, anio: { type: 'integer' } },
-    },
-    trabajadores: {
-      type: 'array', items: {
-        type: 'object', additionalProperties: false,
-        required: ['nombre', 'proyecto', 'cargo', 'salario', 'isss', 'afp', 'rentaSalario', 'viaticos', 'rentaViaticos'],
-        properties: {
-          nombre: { type: 'string' }, proyecto: { type: 'string', enum: PROYECTOS }, cargo: { type: 'string' },
-          salario: num, isss: num, afp: num, rentaSalario: num, viaticos: num, rentaViaticos: num,
-        },
-      },
-    },
-  },
-};
-const PROMPT = `Este PDF es la planilla quincenal de IPMR (Ingeniería y Proyectos Morales). Extrae cada trabajador de las tablas.
-- proyecto: tablas de "PROYECTO EL CHANGALLO" → Changallo; tablas de "COMUNIDAD ITALIA" (incluye "CONTRATO MOPT ... COMUNIDAD ITALIA") → Italia; "PLANILLA GENERAL" u otras de oficina → Oficina.
-- salario: salario quincenal o monto de servicios profesionales. isss, afp: 0 si la columna no existe o está vacía. rentaSalario: renta sobre salario/servicios.
-- viaticos y rentaViaticos: columnas de viáticos y su renta (0 si vacías, "-" = 0).
-- Montos como números (1,000.00 → 1000). Ignora filas TOTAL, resúmenes ("DETALLE DE PAGOS") y páginas sin trabajadores. Si una persona aparece en dos proyectos, crea una fila por proyecto.
-- periodo: de títulos como "2DA QUINCENA AGOSTO 2026" (1RA = 1 al 15; 2DA = 16 al último día del mes).
-- cargo: columna "PUESTO FUNCIONAL". Nombres tal como aparecen, en mayúsculas.`;
-
-const claude = process.env.ANTHROPIC_API_KEY ? new Anthropic() : null;
-
+// ---------- extracción de planilla (extractor/planillas.py) ----------
 app.post('/api/extraer', async (req, res) => {
-  if (!claude) return res.status(503).json({ error: 'Extracción automática no disponible (falta ANTHROPIC_API_KEY). Agregue los trabajadores manualmente.' });
-  const pdf = String(req.body?.pdf || '');
-  if (!pdf) return res.status(400).json({ error: 'Falta el PDF' });
-  const peticion = {
-    model: 'claude-opus-5',
-    max_tokens: 16000,
-    output_config: { format: { type: 'json_schema', schema: ESQUEMA } },
-    messages: [{ role: 'user', content: [
-      { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: pdf } },
-      { type: 'text', text: PROMPT },
-    ] }],
-  };
+  const { archivo, nombre = 'planilla.xlsx' } = req.body || {};
+  if (!archivo) return res.status(400).json({ error: 'Falta el archivo de la planilla' });
   try {
-    // Con respaldo del servidor ante un rechazo; si la cuenta no tiene esa beta, se reintenta sin ella.
-    const msg = await claude.beta.messages
-      .create({ ...peticion, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' })
-      .catch(e => { console.warn('Reintentando sin fallbacks:', e.message); return claude.messages.create(peticion); });
-    if (msg.stop_reason !== 'end_turn') return res.status(502).json({ error: `La extracción no terminó (${msg.stop_reason}). Intente de nuevo o agregue filas manualmente.` });
-    res.json(JSON.parse(msg.content.find(b => b.type === 'text').text));
+    const datos = await extraerPlanilla(Buffer.from(archivo, 'base64'), String(nombre).slice(0, 120));
+    const { periodo, trabajadores, avisos } = mapear(datos);
+    if (!trabajadores.length) return res.status(422).json({ error: 'No se encontraron trabajadores en el archivo' });
+    res.json({ periodo, trabajadores, avisos });
   } catch (e) {
     console.error('Error de extracción', e);
-    res.status(502).json({ error: `Error al extraer: ${e.message}` });
+    res.status(502).json({ error: `Error al leer la planilla: ${e.message}` });
   }
 });
 

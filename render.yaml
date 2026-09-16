@@ -1,16 +1,13 @@
 services:
   - type: web
     name: recibos-ipmr
-    runtime: node
+    runtime: docker
     plan: starter
-    buildCommand: npm ci
-    startCommand: node --env-file-if-exists=.env server.js
+    dockerfilePath: ./Dockerfile
     healthCheckPath: /admin
     envVars:
       - key: DATA_DIR
         value: /var/data
-      - key: NODE_VERSION
-        value: "22.13.0"
       - key: SESSION_SECRET
         generateValue: true
       - key: MAIL_TO
@@ -20,8 +17,6 @@ services:
       - key: SMTP_PORT
         value: "465"
       - key: ADMIN_PASSWORD
-        sync: false
-      - key: ANTHROPIC_API_KEY
         sync: false
       - key: SMTP_USER
         sync: false
