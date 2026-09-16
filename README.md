@@ -47,6 +47,7 @@ Sirve igual en Railway o Fly.io: es un solo proceso Node con un volumen persiste
 
 - Los tokens son de 24 bytes aleatorios (no adivinables) y no requieren login. El panel usa una sola contraseña y cookie firmada (7 días).
 - Al firmar se guarda fecha/hora, IP y dispositivo. El PDF se regenera a partir de los datos guardados, que ya no se pueden editar (un recibo firmado no se puede borrar).
-- La lectura de la planilla **no reemplaza la revisión**: el recibo no tiene línea de IVA ni de descuento personal, así que esas filas salen marcadas en amarillo con la diferencia contra el total de la planilla. Revise siempre los montos antes de generar.
+- El recibo incluye dos líneas opcionales, `(+) IVA` y `DESCUENTO PERSONAL`, que solo se imprimen cuando la planilla las trae; sin ellas el recibo es idéntico a la plantilla.
+- La lectura de la planilla **no reemplaza la revisión**: si el total del recibo no coincide con el de la planilla, la fila sale marcada en amarillo con la diferencia. Revise siempre los montos antes de generar.
 - Las columnas cambian de nombre entre hojas (`RENTA` es del salario en unas y de viáticos en otras), por eso `planilla.js` las reparte por posición respecto a la columna de viáticos, no por nombre.
 - Proyecto: la hoja que diga CHANGALLO → Changallo, la que diga ITALIA → Italia, el resto → Oficina. Período: "1RA QUINCENA" → 1 al 15, "2DA/2NDA" → 16 al último día del mes.

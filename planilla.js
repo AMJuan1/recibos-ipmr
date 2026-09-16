@@ -45,6 +45,8 @@ export function montosDe(montos) {
   const despues = iViaticos < 0 ? undefined : rentas.find(([, i]) => i > iViaticos);
   return {
     salario: monto(en(busca(/^(SALARIO QUINCENAL|SERVICIOS PROFESIONALES)/i))),
+    iva: monto(en(busca(/^(MAS\s+)?IVA/i))),
+    descuento: monto(en(busca(/^DESC/i))),
     isss: monto(en(busca(/^ISSS/i))),
     afp: monto(en(busca(/^AFP/i))),
     rentaSalario: monto(antes?.[0]),

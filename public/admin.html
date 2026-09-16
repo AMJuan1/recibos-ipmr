@@ -71,7 +71,7 @@
       <div class="scroll">
         <table id="revision">
           <thead><tr><th><input type="checkbox" id="todos" checked title="Incluir todos"></th><th>Nombre</th><th>Proyecto</th><th>Cargo</th>
-            <th class="n">Salario</th><th class="n">ISSS</th><th class="n">AFP</th><th class="n">Renta sal.</th>
+            <th class="n">Salario</th><th class="n">IVA</th><th class="n">Descuento</th><th class="n">ISSS</th><th class="n">AFP</th><th class="n">Renta sal.</th>
             <th class="n">Viáticos</th><th class="n">Renta viát.</th><th class="n">Total</th><th></th></tr></thead>
           <tbody></tbody>
         </table>
@@ -105,12 +105,12 @@
 <script>
 const MESES = ['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO','AGOSTO','SEPTIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE'];
 const PROYECTOS = ['Changallo', 'Italia', 'Oficina'];
-const CAMPOS = ['salario', 'isss', 'afp', 'rentaSalario', 'viaticos', 'rentaViaticos'];
+const CAMPOS = ['salario', 'iva', 'descuento', 'isss', 'afp', 'rentaSalario', 'viaticos', 'rentaViaticos'];
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
 const dinero = n => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const c = v => Math.round((+v || 0) * 100);
-const totalDe = t => (c(t.salario) - c(t.isss) - c(t.afp) - c(t.rentaSalario) + c(t.viaticos) - c(t.rentaViaticos)) / 100;
+const totalDe = t => (c(t.salario) + c(t.iva) - c(t.descuento) - c(t.isss) - c(t.afp) - c(t.rentaSalario) + c(t.viaticos) - c(t.rentaViaticos)) / 100;
 const link = token => `${location.origin}/recibo/${token}`;
 
 async function api(url, opts = {}) {
@@ -173,7 +173,7 @@ $('revision').addEventListener('click', e => {
 });
 $('todos').onchange = e => { filas.forEach(t => t.incluir = e.target.checked); pintarRevision(); };
 $('agregar').onclick = () => {
-  filas.push({ incluir: true, nombre: '', proyecto: 'Changallo', cargo: '', salario: 0, isss: 0, afp: 0, rentaSalario: 0, viaticos: 0, rentaViaticos: 0 });
+  filas.push({ incluir: true, nombre: '', proyecto: 'Changallo', cargo: '', ...Object.fromEntries(CAMPOS.map(k => [k, 0])) });
   pintarRevision();
 };
 

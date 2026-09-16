@@ -19,13 +19,19 @@ const db = new DatabaseSync(join(DATA_DIR, 'recibos.db'));
 db.exec(`CREATE TABLE IF NOT EXISTS recibos (
   token TEXT PRIMARY KEY,
   nombre TEXT NOT NULL, proyecto TEXT NOT NULL, cargo TEXT NOT NULL DEFAULT '',
-  salario REAL NOT NULL, isss REAL NOT NULL, afp REAL NOT NULL, rentaSalario REAL NOT NULL,
+  salario REAL NOT NULL, iva REAL NOT NULL DEFAULT 0, descuento REAL NOT NULL DEFAULT 0,
+  isss REAL NOT NULL, afp REAL NOT NULL, rentaSalario REAL NOT NULL,
   viaticos REAL NOT NULL, rentaViaticos REAL NOT NULL,
   diaInicio INTEGER NOT NULL, diaFin INTEGER NOT NULL, mes TEXT NOT NULL, anio INTEGER NOT NULL,
   fechaEmision TEXT NOT NULL, creadoEn TEXT NOT NULL,
   firmadoEn TEXT, firmaIp TEXT, firmaDispositivo TEXT, firma BLOB,
   correoEnviadoEn TEXT, correoError TEXT
 )`);
+// Bases creadas antes de que el recibo tuviera IVA y descuento personal.
+for (const col of ['iva', 'descuento'])
+  if (!db.prepare('PRAGMA table_info(recibos)').all().some(c => c.name === col))
+    db.exec(`ALTER TABLE recibos ADD COLUMN ${col} REAL NOT NULL DEFAULT 0`);
+
 const buscar = token => {
   const r = db.prepare('SELECT * FROM recibos WHERE token = ?').get(token);
   if (r?.firma) r.firma = Buffer.from(r.firma);
@@ -112,6 +118,8 @@ app.post('/api/extraer', async (req, res) => {
 });
 
 // ---------- recibos (admin) ----------
+const CAMPOS = ['salario', 'iva', 'descuento', 'isss', 'afp', 'rentaSalario', 'viaticos', 'rentaViaticos'];
+
 function validar(body) {
   const { periodo: p = {}, fechaEmision, trabajadores } = body || {};
   const entero = (v, min, max) => Number.isInteger(v) && v >= min && v <= max;
@@ -121,7 +129,7 @@ function validar(body) {
   for (const t of trabajadores) {
     if (!String(t.nombre || '').trim()) return 'Hay un trabajador sin nombre';
     if (!PROYECTOS.includes(t.proyecto)) return `Proyecto inválido para ${t.nombre}`;
-    for (const k of ['salario', 'isss', 'afp', 'rentaSalario', 'viaticos', 'rentaViaticos'])
+    for (const k of CAMPOS)
       if (typeof t[k] !== 'number' || !Number.isFinite(t[k]) || t[k] < 0) return `Monto inválido (${k}) para ${t.nombre}`;
     if (calcular(t).total <= 0) return `El total de ${t.nombre} debe ser mayor que cero`;
   }
@@ -131,21 +139,21 @@ app.post('/api/recibos', (req, res) => {
   const error = validar(req.body);
   if (error) return res.status(400).json({ error });
   const { periodo: p, fechaEmision, trabajadores } = req.body;
-  const ins = db.prepare(`INSERT INTO recibos (token, nombre, proyecto, cargo, salario, isss, afp, rentaSalario, viaticos, rentaViaticos,
-    diaInicio, diaFin, mes, anio, fechaEmision, creadoEn) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+  const ins = db.prepare(`INSERT INTO recibos (token, nombre, proyecto, cargo, ${CAMPOS.join(', ')},
+    diaInicio, diaFin, mes, anio, fechaEmision, creadoEn) VALUES (${Array(CAMPOS.length + 10).fill('?').join(',')})`);
   const ahora = new Date().toISOString();
   db.exec('BEGIN');
   try {
     for (const t of trabajadores)
       ins.run(randomBytes(24).toString('base64url'), t.nombre.trim(), t.proyecto, String(t.cargo || '').trim(),
-        t.salario, t.isss, t.afp, t.rentaSalario, t.viaticos, t.rentaViaticos, p.diaInicio, p.diaFin, p.mes, p.anio, fechaEmision, ahora);
+        ...CAMPOS.map(k => t[k]), p.diaInicio, p.diaFin, p.mes, p.anio, fechaEmision, ahora);
     db.exec('COMMIT');
   } catch (e) { db.exec('ROLLBACK'); throw e; }
   res.json({ ok: true, creados: trabajadores.length });
 });
 
 app.get('/api/recibos', (req, res) => {
-  const filas = db.prepare(`SELECT token, nombre, proyecto, cargo, salario, isss, afp, rentaSalario, viaticos, rentaViaticos,
+  const filas = db.prepare(`SELECT token, nombre, proyecto, cargo, ${CAMPOS.join(', ')},
     diaInicio, diaFin, mes, anio, fechaEmision, creadoEn, firmadoEn, firmaIp, firmaDispositivo, correoEnviadoEn, correoError
     FROM recibos ORDER BY anio DESC, creadoEn DESC, proyecto, nombre`).all();
   res.json(filas.map(r => ({ ...r, total: calcular(r).total, firmadoEnTexto: r.firmadoEn && fechaSV(r.firmadoEn) })));

@@ -8,10 +8,10 @@ const FIRMA_AUTORIZA = fileURLToPath(new URL('./public/firma-autoriza.png', impo
 const DIRECCION = 'Av. Artillería 9-A, Col. Manuel José Arce, Distrito de San Salvador, Municipio de San Salvador Centro, Departamento de San Salvador, El Salvador. Tel: 2230-5042, 7700-6226 Email inpromorsa@gmail.com';
 
 // ---------- montos ----------
-const cents = n => Math.round(Number(n) * 100);
+const cents = n => Math.round((Number(n) || 0) * 100); // iva y descuento son opcionales
 
 export function calcular(r) {
-  const subSalario = cents(r.salario) - cents(r.isss) - cents(r.afp) - cents(r.rentaSalario);
+  const subSalario = cents(r.salario) + cents(r.iva) - cents(r.isss) - cents(r.afp) - cents(r.rentaSalario) - cents(r.descuento);
   const subViaticos = cents(r.viaticos) - cents(r.rentaViaticos);
   return { subSalario: subSalario / 100, subViaticos: subViaticos / 100, total: (subSalario + subViaticos) / 100 };
 }
@@ -56,11 +56,14 @@ function datos(r) {
     total, subSalario, subViaticos,
     letras: montoEnLetras(total),
     periodo: `${rango} DE ${r.mes} ${r.anio}`,
+    // IVA y descuento personal solo aparecen si la planilla los trae; si no, el recibo queda igual a la plantilla.
     filas: [
       { label: `SALARIO DEL ${rango}`, monto: r.salario },
+      Number(r.iva) > 0 && { mas: true, label: 'IVA', monto: r.iva },
       { menos: true, label: 'ISSS', monto: r.isss },
       { sangria: true, label: 'AFP', monto: r.afp },
       { sangria: true, label: 'RENTA', monto: r.rentaSalario },
+      Number(r.descuento) > 0 && { sangria: true, label: 'DESCUENTO PERSONAL', monto: r.descuento },
       { total: true, label: 'SUB-TOTAL', monto: subSalario },
       { vacia: true },
       { label: `VIÁTICOS DEL ${rango}`, monto: r.viaticos },
@@ -68,7 +71,7 @@ function datos(r) {
       { total: true, label: 'SUB-TOTAL', monto: subViaticos },
       { vacia: true },
       { total: true, label: 'TOTAL A RECIBIR', monto: total },
-    ],
+    ].filter(Boolean),
     fecha: { dia: String(diaE), mes: MESES[mesE - 1].toLowerCase(), anio: String(anioE) },
   };
 }
@@ -121,8 +124,8 @@ export function generarPdf(r) {
     if (f.vacia) { y += 9; continue; }
     const fuente = f.total ? 'Helvetica-Bold' : 'Helvetica';
     doc.font(fuente).fontSize(10);
-    if (f.menos) doc.text('(-)', L + 29, y, { lineBreak: false });
-    doc.text(f.label, L + (f.menos || f.sangria ? 60 : 0), y, { lineBreak: false, underline: !!f.total });
+    if (f.menos || f.mas) doc.text(f.mas ? '(+)' : '(-)', L + 29, y, { lineBreak: false });
+    doc.text(f.label, L + (f.menos || f.mas || f.sangria ? 60 : 0), y, { lineBreak: false, underline: !!f.total });
     doc.text(`$${dinero(f.monto)}`, L + 331, y, { width: 130, align: 'right', underline: !!f.total });
     y += 15.5;
   }
@@ -168,7 +171,7 @@ export function reciboHtml(r, firmaDataUrl) {
   const d = datos(r);
   const filas = d.filas.map(f => f.vacia ? '<tr class="vacia"><td colspan="2"></td></tr>' : `
     <tr class="${f.total ? 'tot' : ''}">
-      <td class="${f.menos || f.sangria ? 'sang' : ''}">${f.menos || f.sangria ? `<span class="menos">${f.menos ? '(-)' : ''}</span>` : ''}<span>${esc(f.label)}</span></td>
+      <td class="${f.menos || f.mas || f.sangria ? 'sang' : ''}">${f.menos || f.mas || f.sangria ? `<span class="menos">${f.menos ? '(-)' : f.mas ? '(+)' : ''}</span>` : ''}<span>${esc(f.label)}</span></td>
       <td class="num"><span>$${dinero(f.monto)}</span></td>
     </tr>`).join('');
   return `
