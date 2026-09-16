@@ -76,9 +76,19 @@ app.use(express.static('public', { index: false }));
 app.get('/', (req, res) => res.redirect('/admin'));
 app.get('/admin', (req, res) => res.sendFile('admin.html', { root: 'public' }));
 
+// Bloqueo por fuerza bruta: la contraseña puede ser corta, así que 5 fallos cierran esa IP por 15 minutos.
+const intentos = new Map();
 app.post('/api/login', (req, res) => {
+  const previo = intentos.get(req.ip);
+  if (previo?.hasta > Date.now())
+    return res.status(429).json({ error: `Demasiados intentos. Espere ${Math.ceil((previo.hasta - Date.now()) / 60000)} minutos.` });
   const a = Buffer.from(String(req.body?.password ?? '')), b = Buffer.from(ADMIN_PASSWORD);
-  if (a.length !== b.length || !timingSafeEqual(a, b)) return setTimeout(() => res.status(401).json({ error: 'Contraseña incorrecta' }), 800);
+  if (a.length !== b.length || !timingSafeEqual(a, b)) {
+    const n = (previo?.n || 0) + 1;
+    intentos.set(req.ip, { n, hasta: n >= 5 ? Date.now() + 9e5 : 0 });
+    return setTimeout(() => res.status(401).json({ error: 'Contraseña incorrecta' }), 800);
+  }
+  intentos.delete(req.ip);
   const exp = String(Date.now() + 7 * 864e5);
   res.cookie('admin', `${exp}.${firmar(exp)}`, { httpOnly: true, sameSite: 'lax', secure: req.secure, maxAge: 7 * 864e5 });
   res.json({ ok: true });
