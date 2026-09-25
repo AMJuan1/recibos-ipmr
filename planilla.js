@@ -23,7 +23,7 @@ const proyectoDe = p => /CHANGALLO/i.test(p) ? 'Changallo' : /ITALIA/i.test(p) ?
 
 // "2DA QUINCENA AGOSTO 2026" -> { diaInicio: 16, diaFin: 31, mes: 'AGOSTO', anio: 2026 }
 export function periodoDe(texto = '') {
-  const m = /(\d)\s*(?:RA|DA|NDA|ERA|º|°)?\s*QUINCENA\s+(?:DE\s+)?([A-ZÁÉÍÓÚÑ]+)\s+(\d{4})/i.exec(texto.normalize('NFC'));
+  const m = /(\d)\s*(?:RA|DA|NDA|ERA|º|°)?\.?\s*QUINCENA\s+(?:DEL?\s+)?(?:MES\s+DE\s+)?([A-ZÁÉÍÓÚÑ]+)\s+(\d{4})/i.exec(texto.normalize('NFC'));
   if (!m) return null;
   const mes = m[2].toUpperCase(), anio = Number(m[3]);
   if (!MESES.includes(mes)) return null;
@@ -73,7 +73,9 @@ export function constanciasDe(archivos) {
       let concepto = p.periodo || archivo;
       // Dos hojas del mismo proyecto en el mismo período (p. ej. Italia y el contrato MOPT): se distinguen.
       if (grupo.lineas.some(l => l.concepto === concepto)) concepto = `${concepto} — ${p.proyecto}`;
-      grupo.lineas.push({ concepto, monto: Number(p.total_pagado) || 0 });
+      const monto = Number(p.total_pagado) || 0;
+      if (monto <= 0) continue; // esa planilla no le pagó nada: no va en la constancia
+      grupo.lineas.push({ concepto, monto });
       grupos.set(clave, grupo);
     }
   }

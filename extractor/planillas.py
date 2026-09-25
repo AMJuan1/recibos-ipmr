@@ -34,14 +34,29 @@ def _redondea(x):
     return float(Decimal(str(x)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
 
+def _separa(texto):
+    """Parte el texto en (entero, decimales) sin confundir el separador:
+    '1,000.00' y '1.000,00' son los dos 1000.00.
+
+    Regla: manda el ultimo punto o coma; si lo siguen 1 o 2 digitos hasta el final es
+    separador decimal, y si lo siguen 3 o mas es separador de miles.
+    """
+    limpio = re.sub(r"[^\d.,]", "", texto)
+    corte = max(limpio.rfind(","), limpio.rfind("."))
+    if corte >= 0 and re.fullmatch(r"\d{1,2}", limpio[corte + 1:]):
+        return re.sub(r"[.,]", "", limpio[:corte]) or "0", limpio[corte + 1:]
+    return re.sub(r"[.,]", "", limpio) or "0", ""
+
+
 def _num(v):
-    """Numero de Excel tal cual; de PDF ('-$ 1,000.00-') se rescatan los digitos."""
+    """Numero de Excel tal cual; de texto o PDF ('-$ 1,000.00-', '$ 2.783,33') se rescatan los digitos."""
     if isinstance(v, (int, float)) and not isinstance(v, bool):
         return _redondea(v)
     for line in str(v or "").split("\n"):
         if any(ch.isdigit() for ch in line):
             try:
-                return _redondea(re.sub(r"[^\d.]", "", line.replace(",", "")))
+                entero, decimales = _separa(line)
+                return _redondea(entero + ("." + decimales if decimales else ""))
             except ValueError:
                 return 0.0
     return 0.0
@@ -244,6 +259,9 @@ def _test():
     assert _num(1000) == 1000.0 and _num("-$ 1,000.00-") == 1000.0
     assert _num("-$ - -") == 0.0 and _num(None) == 0.0
     assert _num("-$ 1L50.00-") == 150.0                    # letra pegada por el PDF
+    assert _num("$ 750,00") == 750.0 and _num("$ 2.783,33") == 2783.33   # formato europeo
+    assert _num("$ 1,500") == 1500.0 and _num("$ 1.500") == 1500.0       # miles, no decimales
+    assert _num("$ 0,5") == 0.5 and _num("1.234.567,89") == 1234567.89
     assert _num("PAGAR SERV.\n-$ 675.00-\nPROF. +") == 675.0
     assert _num(32.625) == 32.63 and _num(388.825) == 388.83     # centavos como Excel
     assert _columnas(["RENTA", "RENTA", None]) == ["RENTA", "RENTA_2", "COL"]

@@ -12,6 +12,9 @@ assert.deepEqual(periodoDe('1RA QUINCENA SEPTIEMBRE 2026'), { diaInicio: 1, diaF
 assert.deepEqual(periodoDe('2DA  QUINCENA AGOSTO 2026'), { diaInicio: 16, diaFin: 31, mes: 'AGOSTO', anio: 2026 });
 assert.deepEqual(periodoDe('2NDA QUINCENA FEBRERO 2028'), { diaInicio: 16, diaFin: 29, mes: 'FEBRERO', anio: 2028 });
 assert.equal(periodoDe('PLANILLA SIN FECHA'), null);
+// Formato viejo de las planillas de Italia: punto tras el ordinal y "MES DE" en medio.
+assert.deepEqual(periodoDe('2DA. QUINCENA MES DE ABRIL 2026'), { diaInicio: 16, diaFin: 30, mes: 'ABRIL', anio: 2026 });
+assert.deepEqual(periodoDe('1RA. QUINCENA MES DE MAYO 2026'), { diaInicio: 1, diaFin: 15, mes: 'MAYO', anio: 2026 });
 
 // Las columnas cambian de nombre entre hojas: lo que va antes de VIÁTICOS es renta de salario, lo de después de viáticos.
 assert.deepEqual(montosDe({ 'SALARIO QUINCENAL': 1000, 'ISSS 3%': 15, 'AFP 7,25%': 72.5, RENTA: 122.98, 'DESC. PERSONAL': 0, 'SALARIO LIQUIDO': 789.52, 'VIÁTICOS': 500, RENTA_2: 50, 'TOTAL A PAGAR': 1239.52 }),
@@ -97,6 +100,13 @@ const changallo = agrupadas.find(p => p.proyecto === 'Changallo');
 assert.deepEqual(changallo.lineas.map(l => l.concepto), ['1RA QUINCENA JULIO 2026', '2DA QUINCENA AGOSTO 2026']);
 assert.equal(calcular({ tipo: 'constancia', lineas: changallo.lineas }).total, 850);
 assert.equal(agrupadas.find(p => p.proyecto === 'Italia').lineas.length, 1);
+
+// Las planillas que no le pagaron nada a esa persona no entran en la constancia.
+const conCeros = constanciasDe([
+  { nombre: 'a.xlsx', datos: planilla('1RA. QUINCENA MES DE MAYO 2026', 'PROYECTO COMUNIDAD ITALIA', [['MARLON', 'ING.', 585]]) },
+  { nombre: 'b.xlsx', datos: planilla('1RA QUINCENA JULIO 2026', 'PROYECTO COMUNIDAD ITALIA', [['MARLON', 'ING.', 0]]) },
+]);
+assert.deepEqual(conCeros[0].lineas.map(l => l.concepto), ['1RA. QUINCENA MES DE MAYO 2026']);
 
 // Dos hojas del mismo proyecto y período se distinguen en el texto de la fila.
 const mismoPeriodo = constanciasDe([
