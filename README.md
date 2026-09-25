@@ -88,6 +88,7 @@ vez y queda en solo lectura.
 - **El total es el de la planilla.** Excel calcula con más decimales de los que imprime (AFP 32.625 se muestra 32.63), así que sumar las líneas impresas puede dar un centavo menos. Por eso los SUB-TOTAL y el TOTAL se toman de las columnas de la planilla (`SALARIO LIQUIDO`, `TOTAL MENOS DESCUENTO`, `TOTAL A PAGAR`) y solo se recalculan si se edita un monto en el panel.
 - La lectura de la planilla **no reemplaza la revisión**: si las líneas no llegan al total de la planilla (una columna que el recibo no contempla), la fila sale marcada en amarillo. Revise siempre los montos antes de generar.
 - Las columnas cambian de nombre entre hojas (`RENTA` es del salario en unas y de viáticos en otras), por eso `planilla.js` las reparte por posición respecto a la columna de viáticos, no por nombre.
+- Una hoja puede traer **varias planillas apiladas** (servicios profesionales arriba y la del contrato con ISSS abajo): cada encabezado `EMPLEADO` abre una tabla nueva, y el proyecto y el período se toman de las líneas que tiene encima esa tabla.
 - Montos como texto: las planillas viejas traen `$ 2.783,33` (coma decimal) y las nuevas `$ 1,000.00`. El extractor decide por el último separador: si lo siguen 1 o 2 dígitos es decimal, si lo siguen 3 es de miles.
 - En las constancias se omiten las planillas donde a esa persona no se le pagó nada ($0).
 - Proyecto: la hoja que diga CHANGALLO → Changallo, la que diga ITALIA → Italia, el resto → Oficina. Período: "1RA QUINCENA" → 1 al 15, "2DA/2NDA" → 16 al último día del mes.

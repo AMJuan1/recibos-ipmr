@@ -70,8 +70,8 @@ def _es_encabezado(linea):
 def _meta(lineas):
     """Proyecto y periodo de las lineas que estan sobre la tabla."""
     util = [l for l in lineas if l and not EMPRESA_RE.search(l)]
-    proyecto = next((l for l in util if PROY_RE.search(l)), "")
-    periodo = next((l for l in util if PER_RE.search(l) and l != proyecto), "")
+    proyecto = next((l for l in reversed(util) if PROY_RE.search(l)), "")
+    periodo = next((l for l in reversed(util) if PER_RE.search(l) and l != proyecto), "")
     return proyecto.split(",")[0].strip(), periodo   # "PLANILLA GENERAL, CORRESPONDIENTES DE"
 
 
@@ -95,16 +95,21 @@ def _fila_encabezado(grid):
 # ---------------------------------------------------------------- lectura
 
 def _secciones_excel(fuente):
-    """[(nombre_hoja, lineas_de_arriba, grid_desde_el_encabezado)] por cada hoja con tabla."""
+    """[(nombre_hoja, lineas_de_arriba, grid_desde_el_encabezado)] por cada tabla.
+
+    Una hoja puede traer varias planillas apiladas (p. ej. servicios profesionales arriba
+    y la del contrato con ISSS mas abajo): cada encabezado 'EMPLEADO' abre una tabla nueva.
+    """
     import openpyxl
     wb = openpyxl.load_workbook(fuente, data_only=True, read_only=True)
     for ws in wb.worksheets:
         grid = [list(r) for r in ws.iter_rows(values_only=True)]
-        h = _fila_encabezado(grid)
-        if h is None:
-            continue
-        arriba = [_txt(c) for row in grid[:h] for c in row if _txt(c)]
-        yield ws.title, arriba, grid[h:]
+        encabezados = [i for i, row in enumerate(grid) if _fila_encabezado([row]) == 0]
+        for n, h in enumerate(encabezados):
+            desde = encabezados[n - 1] if n else 0          # lineas entre la tabla anterior y esta
+            hasta = encabezados[n + 1] if n + 1 < len(encabezados) else len(grid)
+            arriba = [_txt(c) for row in grid[desde:h] for c in row if _txt(c)]
+            yield (ws.title if len(encabezados) == 1 else f"{ws.title} ({n + 1})"), arriba, grid[h:hasta]
     wb.close()
 
 
@@ -121,10 +126,14 @@ def _secciones_pdf(fuente):
                 if re.match(r"\d", l):
                     break
                 sobras |= {w for w in l.split() if _es_encabezado(w)}
-            for tabla in page.extract_tables():
+            for encontrada in page.find_tables():
+                tabla = encontrada.extract()
                 h = _fila_encabezado(tabla)
                 if h is None:
                     continue
+                arriba = [l.strip() for l in
+                          (page.crop((0, 0, page.width, encontrada.bbox[1])).extract_text() or "").split("\n")
+                          if l.strip()] or lineas[:i or 5]
                 cols = [_txt(c) for c in tabla[h]]
                 dl = max((k for k, c in enumerate(cols) if c.upper().startswith("D.L")), default=3)
                 for row in tabla[h + 1:h + 3]:                 # completar nombres partidos
@@ -142,7 +151,7 @@ def _secciones_pdf(fuente):
                         else:
                             fila[k] = _txt(str(fila[k] or "").replace("\n", " "))
                     limpias.append(fila)
-                yield f"pagina {n}", lineas[:i or 5], limpias
+                yield f"pagina {n}", arriba, limpias
 
 
 # ---------------------------------------------------------------- parseo
@@ -269,6 +278,11 @@ def _test():
     assert _meta(["INGENIERIA Y PROYECTOS MORALES, S.A. DE C.V.", "PROYECTO EL CHANGALLO",
                   "1RA QUINCENA SEPTIEMBRE 2026"]) == ("PROYECTO EL CHANGALLO",
                                                        "1RA QUINCENA SEPTIEMBRE 2026")
+    # Segunda tabla de la hoja: arriba quedo el encabezado de la planilla anterior.
+    assert _meta(["PLANILLA GENERAL, CORRESPONDIENTES DEL 01 AL 15 DE ABRIL DEL 2026,",
+                  "CONTRATO MOPT 126 /2026 COMUNIDAD ITALIA",
+                  "1RA. QUINCENA MES DE JUNIO 2026"]) == ("CONTRATO MOPT 126 /2026 COMUNIDAD ITALIA",
+                                                          "1RA. QUINCENA MES DE JUNIO 2026")
     assert _total({"TOTAL A PAGAR": 675.0, "TOTAL A PAGAR_2": 0.0}) == 675.0
     assert _total({"TOTAL A PAGAR": 0.0, "TOTAL A PAGAR_2": 0.0}) == 0.0
     grid = [["ITEM", "EMPLEADO", "PUESTO", "D.L.", "SERVICIOS", "TOTAL A PAGAR"],
