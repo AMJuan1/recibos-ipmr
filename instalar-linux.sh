@@ -90,7 +90,8 @@ WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-systemctl enable --now "$SERVICIO"
+systemctl enable "$SERVICIO"
+systemctl restart "$SERVICIO"   # restart, no start: si ya corría hay que levantar el código nuevo
 sleep 3
 
 if curl -fsS "http://127.0.0.1:$PUERTO/admin" -o /dev/null; then
