@@ -28,6 +28,9 @@ fi
 id -u "$USUARIO" >/dev/null 2>&1 || useradd --system --home-dir "$CARPETA" --shell /usr/sbin/nologin "$USUARIO"
 
 # ---------- código ----------
+# El repo pertenece al usuario del servicio y acá corremos como root: git lo rechaza sin esto.
+git config --global --add safe.directory "$CARPETA" 2>/dev/null || true
+
 if [ -d "$CARPETA/.git" ]; then
   echo "Actualizando el código en $CARPETA..."
   git -C "$CARPETA" pull --ff-only
