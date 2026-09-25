@@ -218,8 +218,6 @@ function pdfConstancia(r) {
 
   doc.fillColor('black').font('Helvetica-Bold').fontSize(13)
     .text('CONSTANCIA DE RECIBO DE PAGOS', L, Y_INICIO, { width: W, align: 'center', underline: true });
-  doc.font('Helvetica-Oblique').fontSize(10)
-    .text('(Planillas atrasadas / sin constancia previa)', L, doc.y + 4, { width: W, align: 'center' });
 
   const tramos = [
     ['Yo, ', 'n'], [r.nombre, 'bu'], [', con cargo de ', 'n'], [r.cargo || '—', 'u'], [' en el proyecto ', 'n'], [r.proyecto, 'u'],
@@ -228,7 +226,7 @@ function pdfConstancia(r) {
     [' de las siguientes planillas/quincenas, ya trabajadas y pagadas con anterioridad, de las cuales no se tenía constancia firmada, según el siguiente detalle:', 'n'],
   ];
   doc.fontSize(10);
-  doc.x = L; doc.y = doc.y + 10;
+  doc.x = L; doc.y = doc.y + 16;
   tramos.forEach(([t, e], i) => doc.font(e.includes('b') ? 'Helvetica-Bold' : 'Helvetica')
     .text(t, { width: W, align: 'justify', underline: e.includes('u'), continued: i < tramos.length - 1, lineGap: 1.5 }));
   let y = doc.y + 14;
@@ -308,7 +306,6 @@ function constanciaHtml(r, firmaDataUrl) {
     <tr><td class="c">${i + 1}</td><td>${esc(l.concepto)}</td><td class="num">$${dinero(l.monto)}</td></tr>`).join('');
   const cuerpo = `
     <h2 class="titulo">CONSTANCIA DE RECIBO DE PAGOS</h2>
-    <p class="subtitulo">(Planillas atrasadas / sin constancia previa)</p>
     <p class="cuerpo">Yo, <b><u>${esc(r.nombre)}</u></b>, con cargo de <u>${esc(r.cargo || '—')}</u> en el proyecto <u>${esc(r.proyecto)}</u>, hago constar que he recibido de <b>INGENIERÍA Y PROYECTOS MORALES, S.A. DE C.V.</b> la cantidad de <b>${esc(montoEnLetras(total))} (US$${dinero(total)})</b>, correspondiente al pago de <b>SALARIO Y VIÁTICOS</b> de las siguientes planillas/quincenas, ya trabajadas y pagadas con anterioridad, de las cuales no se tenía constancia firmada, según el siguiente detalle:</p>
     <table class="planillas">
       <thead><tr><th class="c">No.</th><th class="c">Planilla / Período</th><th class="c">Monto recibido</th></tr></thead>
@@ -325,8 +322,7 @@ export const RECIBO_CSS = `
 .ipmr{color:#BD1003;font:bold clamp(38px,11vw,52px)/1 "Bookman Old Style",Georgia,"Times New Roman",serif}
 .razon{font-weight:bold;font-size:clamp(11px,3.4vw,18px);text-decoration:underline;text-decoration-color:red;text-underline-offset:3px}
 .por{text-align:center;text-decoration:underline;font-size:17px;margin:0 0 14px}
-.titulo{text-align:center;text-decoration:underline;font-size:19px;margin:0 0 4px}
-.subtitulo{text-align:center;font-style:italic;margin:0 0 16px}
+.titulo{text-align:center;text-decoration:underline;font-size:19px;margin:0 0 16px}
 .cuerpo{text-align:justify}
 @media (max-width:600px){.cuerpo{text-align:left}}
 .detalle{width:100%;border-collapse:collapse;margin:14px 0 26px}
