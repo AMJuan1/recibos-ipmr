@@ -3,8 +3,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { randomBytes, createHmac, timingSafeEqual } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { extraerPlanilla, mapear } from './planilla.js';
-import { PROYECTOS, MESES, calcular, dinero, generarPdf, reciboHtml, RECIBO_CSS, esc, nombreArchivo } from './recibo.js';
+import { extraerPlanilla, mapear, constanciasDe } from './planilla.js';
+import { PROYECTOS, MESES, lineasDe, esConstancia, calcular, dinero, generarPdf, reciboHtml, RECIBO_CSS, esc, nombreArchivo } from './recibo.js';
 
 const {
   PORT = 3000, HOST = '0.0.0.0', DATA_DIR = './data', ADMIN_PASSWORD, SESSION_SECRET = randomBytes(32).toString('hex'),
@@ -21,13 +21,15 @@ db.exec(`CREATE TABLE IF NOT EXISTS recibos (
   isss REAL NOT NULL, afp REAL NOT NULL, rentaSalario REAL NOT NULL,
   viaticos REAL NOT NULL, rentaViaticos REAL NOT NULL,
   subSalarioPlanilla REAL, subViaticosPlanilla REAL,
+  tipo TEXT NOT NULL DEFAULT 'quincena', lineas TEXT,
   diaInicio INTEGER NOT NULL, diaFin INTEGER NOT NULL, mes TEXT NOT NULL, anio INTEGER NOT NULL,
   fechaEmision TEXT NOT NULL, creadoEn TEXT NOT NULL,
   firmadoEn TEXT, firmaIp TEXT, firmaDispositivo TEXT, firma BLOB
 )`);
 // Bases creadas antes de que el recibo tuviera IVA y descuento personal.
 for (const [col, tipo] of [['iva', 'REAL NOT NULL DEFAULT 0'], ['descuento', 'REAL NOT NULL DEFAULT 0'],
-  ['subSalarioPlanilla', 'REAL'], ['subViaticosPlanilla', 'REAL']])
+  ['subSalarioPlanilla', 'REAL'], ['subViaticosPlanilla', 'REAL'],
+  ['tipo', "TEXT NOT NULL DEFAULT 'quincena'"], ['lineas', 'TEXT']])
   if (!db.prepare('PRAGMA table_info(recibos)').all().some(c => c.name === col))
     db.exec(`ALTER TABLE recibos ADD COLUMN ${col} ${tipo}`);
 
@@ -92,6 +94,24 @@ app.post('/api/extraer', async (req, res) => {
   }
 });
 
+app.post('/api/extraer-constancias', async (req, res) => {
+  const archivos = Array.isArray(req.body?.archivos) ? req.body.archivos : [];
+  if (!archivos.length) return res.status(400).json({ error: 'No se recibió ninguna planilla' });
+  const leidos = [], avisos = [];
+  for (const a of archivos) {
+    const nombre = String(a?.nombre || 'planilla.xlsx').slice(0, 120);
+    try {
+      leidos.push({ nombre, datos: await extraerPlanilla(Buffer.from(String(a?.archivo || ''), 'base64'), nombre) });
+    } catch (e) {
+      console.error('Error de extracción', nombre, e.message);
+      avisos.push(`No se pudo leer ${nombre}: ${e.message}`);
+    }
+  }
+  const personas = constanciasDe(leidos);
+  if (!personas.length) return res.status(422).json({ error: avisos[0] || 'No se encontraron trabajadores en los archivos' });
+  res.json({ personas, avisos, archivos: leidos.map(l => l.nombre) });
+});
+
 // ---------- recibos (admin) ----------
 const CAMPOS = ['salario', 'iva', 'descuento', 'isss', 'afp', 'rentaSalario', 'viaticos', 'rentaViaticos'];
 const SUBTOTALES = ['subSalarioPlanilla', 'subViaticosPlanilla'];
@@ -113,6 +133,40 @@ function validar(body) {
   }
 }
 
+function validarConstancias(body) {
+  const { fechaEmision, personas } = body || {};
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaEmision || '')) return 'Fecha de emisión inválida';
+  if (!Array.isArray(personas) || !personas.length) return 'No hay personas seleccionadas';
+  for (const p of personas) {
+    if (!String(p.nombre || '').trim()) return 'Hay una persona sin nombre';
+    if (!PROYECTOS.includes(p.proyecto)) return `Proyecto inválido para ${p.nombre}`;
+    if (!Array.isArray(p.lineas) || !p.lineas.length) return `${p.nombre} no tiene planillas`;
+    for (const l of p.lineas) {
+      if (!String(l.concepto || '').trim()) return `Hay una planilla sin descripción en ${p.nombre}`;
+      if (typeof l.monto !== 'number' || !Number.isFinite(l.monto) || l.monto <= 0) return `Monto inválido en ${p.nombre}`;
+    }
+  }
+}
+
+app.post('/api/constancias', (req, res) => {
+  const error = validarConstancias(req.body);
+  if (error) return res.status(400).json({ error });
+  const { fechaEmision, personas } = req.body;
+  const ins = db.prepare(`INSERT INTO recibos (token, tipo, lineas, nombre, proyecto, cargo, ${CAMPOS.join(', ')},
+    diaInicio, diaFin, mes, anio, fechaEmision, creadoEn)
+    VALUES (?, 'constancia', ?, ?, ?, ?, ${CAMPOS.map(() => 0).join(', ')}, 0, 0, '', 0, ?, ?)`);
+  const ahora = new Date().toISOString();
+  db.exec('BEGIN');
+  try {
+    for (const p of personas)
+      ins.run(randomBytes(24).toString('base64url'),
+        JSON.stringify(p.lineas.map(l => ({ concepto: String(l.concepto).trim(), monto: l.monto }))),
+        p.nombre.trim(), p.proyecto, String(p.cargo || '').trim(), fechaEmision, ahora);
+    db.exec('COMMIT');
+  } catch (e) { db.exec('ROLLBACK'); throw e; }
+  res.json({ ok: true, creados: personas.length });
+});
+
 app.post('/api/recibos', (req, res) => {
   const error = validar(req.body);
   if (error) return res.status(400).json({ error });
@@ -132,10 +186,10 @@ app.post('/api/recibos', (req, res) => {
 });
 
 app.get('/api/recibos', (req, res) => {
-  const filas = db.prepare(`SELECT token, nombre, proyecto, cargo, ${[...CAMPOS, ...SUBTOTALES].join(', ')},
+  const filas = db.prepare(`SELECT token, tipo, lineas, nombre, proyecto, cargo, ${[...CAMPOS, ...SUBTOTALES].join(', ')},
     diaInicio, diaFin, mes, anio, fechaEmision, creadoEn, firmadoEn, firmaIp, firmaDispositivo
     FROM recibos ORDER BY anio DESC, creadoEn DESC, proyecto, nombre`).all();
-  res.json(filas.map(r => ({ ...r, total: calcular(r).total, firmadoEnTexto: r.firmadoEn && fechaSV(r.firmadoEn) })));
+  res.json(filas.map(r => ({ ...r, lineas: lineasDe(r), total: calcular(r).total, firmadoEnTexto: r.firmadoEn && fechaSV(r.firmadoEn) })));
 });
 
 app.delete('/api/recibos/:token', (req, res) => {
@@ -159,16 +213,19 @@ app.get('/recibo/:token', (req, res) => {
   if (!r) return res.status(404).send(pagina('Recibo no encontrado', '<main class="aviso"><h1>Recibo no encontrado</h1><p>Verifique el enlace que recibió.</p></main>'));
   const firmaUrl = r.firma && `data:image/png;base64,${r.firma.toString('base64')}`;
   const acciones = r.firmadoEn
-    ? `<section class="panel ok"><p><b>✔ Recibo firmado</b> el ${esc(fechaSV(r.firmadoEn))}</p>
-       <a class="btn" href="/recibo/${r.token}/pdf">Descargar mi recibo (PDF)</a></section>`
+    ? `<section class="panel ok"><p><b>✔ Documento firmado</b> el ${esc(fechaSV(r.firmadoEn))}</p>
+       <a class="btn" href="/recibo/${r.token}/pdf">Descargar mi copia (PDF)</a></section>`
     : `<section class="panel" id="firmar">
-       <h2>Firme aquí</h2><p>Revise su recibo y firme con el dedo dentro del recuadro.</p>
+       <h2>Firme aquí</h2><p>Revise el documento y firme con el dedo dentro del recuadro.</p>
        <canvas id="pad" aria-label="Recuadro para firmar"></canvas>
        <div class="fila"><button type="button" class="btn sec" id="borrar">Borrar</button>
        <button type="button" class="btn" id="enviar" disabled>Firmar y enviar</button></div>
        <p id="msg" role="status"></p></section>
        <script src="/firma.js" data-token="${r.token}"></script>`;
-  res.send(pagina(`Recibo — ${r.nombre}`, `<main><p class="intro">Recibo de pago · ${esc(r.proyecto)} · ${r.diaInicio} al ${r.diaFin} de ${esc(r.mes)} ${r.anio}${r.firmadoEn ? '' : ' · <a href="#firmar">Ir a firmar ↓</a>'}</p>
+  const encabezado = esConstancia(r)
+    ? `Constancia de pagos · ${esc(r.proyecto)} · ${lineasDe(r).length} planillas`
+    : `Recibo de pago · ${esc(r.proyecto)} · ${r.diaInicio} al ${r.diaFin} de ${esc(r.mes)} ${r.anio}`;
+  res.send(pagina(`${esConstancia(r) ? 'Constancia' : 'Recibo'} — ${r.nombre}`, `<main><p class="intro">${encabezado}${r.firmadoEn ? '' : ' · <a href="#firmar">Ir a firmar ↓</a>'}</p>
     ${reciboHtml(r, firmaUrl)}${acciones}</main>`));
 });
 

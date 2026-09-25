@@ -38,6 +38,13 @@
   .msg{min-height:1.4em;margin:8px 0 0}
   .acciones{display:flex;gap:6px}
   .resumen{color:#555;margin-left:auto}
+  .persona{border:1px solid #e0ded9;border-radius:6px;margin-bottom:8px;padding:8px 10px}
+  .persona summary{cursor:pointer;font-weight:600}
+  .persona summary .det{font-weight:400;color:#555}
+  .persona .datos{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
+  .persona table{margin-top:6px}
+  .persona input.concepto{width:100%;min-width:220px}
+  .persona input[type=number]{width:100px;text-align:right}
   #login{max-width:340px;margin:80px auto}
   #login input{width:100%;margin:8px 0}
 </style>
@@ -84,8 +91,24 @@
     </section>
 
     <section>
+      <h2>2. Constancia de planillas atrasadas</h2>
+      <p style="margin:-6px 0 12px;color:#555">Para planillas ya pagadas sin constancia firmada: junta varias quincenas en un solo documento, con una firma por persona y proyecto.</p>
       <div class="fila">
-        <h2 style="margin:0">2. Estado de recibos</h2>
+        <label>Planillas (pod&eacute;s elegir varias)<input type="file" id="archivosCon" accept=".xlsx,.xls,.pdf" multiple></label>
+        <button id="extraerCon" class="pri">Leer planillas</button>
+        <label>Fecha de emisi&oacute;n<input type="date" id="fechaCon"></label>
+      </div>
+      <div id="personasCon"></div>
+      <div class="fila" style="margin-top:12px">
+        <button id="generarCon" class="pri" disabled>Generar constancias y links</button>
+        <span class="resumen" id="resumenCon"></span>
+      </div>
+      <p class="msg" id="msgCon"></p>
+    </section>
+
+    <section>
+      <div class="fila">
+        <h2 style="margin:0">3. Estado de recibos y constancias</h2>
         <label>Período<select id="filtro"></select></label>
         <label>Proyecto<select id="filtroProy"><option value="">Todos</option><option>Changallo</option><option>Italia</option><option>Oficina</option></select></label>
         <button id="refrescar">Actualizar</button>
@@ -222,9 +245,102 @@ $('generar').onclick = async () => {
   }
 };
 
+// ---------- constancias (varias planillas atrasadas) ----------
+$('fechaCon').value = hoy;
+let personas = [];
+
+const totalPersona = p => p.lineas.reduce((s, l) => s + c(l.monto), 0) / 100;
+
+function pintarConstancias() {
+  $('personasCon').innerHTML = personas.map((p, i) => `
+    <details class="persona" data-i="${i}" ${p.abierto ? 'open' : ''}>
+      <summary><input type="checkbox" data-k="incluir" ${p.incluir ? 'checked' : ''}> ${esc(p.nombre)}
+        <span class="det">· ${esc(p.proyecto)} · ${p.lineas.length} planilla${p.lineas.length === 1 ? '' : 's'} · ${dinero(totalPersona(p))}</span></summary>
+      <div class="datos">
+        <label>Nombre<input class="nombre" data-k="nombre" value="${esc(p.nombre)}"></label>
+        <label>Cargo<input class="cargo" data-k="cargo" value="${esc(p.cargo)}"></label>
+        <label>Proyecto<select data-k="proyecto">${PROYECTOS.map(x => `<option ${x === p.proyecto ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
+      </div>
+      <table>
+        <thead><tr><th style="width:40px">No.</th><th>Planilla / Período</th><th class="n" style="width:120px">Monto</th><th style="width:30px"></th></tr></thead>
+        <tbody>${p.lineas.map((l, j) => `
+          <tr data-j="${j}">
+            <td>${j + 1}</td>
+            <td><input class="concepto" data-k="concepto" value="${esc(l.concepto)}"></td>
+            <td class="n"><input type="number" step="0.01" min="0" data-k="monto" value="${l.monto}"></td>
+            <td><button data-quitar-linea title="Quitar esta planilla">✕</button></td>
+          </tr>`).join('')}
+        </tbody>
+        <tfoot><tr><td></td><td style="text-align:right;font-weight:600">TOTAL</td><td class="n" style="font-weight:600">${dinero(totalPersona(p))}</td><td></td></tr></tfoot>
+      </table>
+    </details>`).join('');
+  const sel = personas.filter(p => p.incluir);
+  $('resumenCon').textContent = personas.length
+    ? `${sel.length} de ${personas.length} seleccionadas · ${sel.reduce((s, p) => s + p.lineas.length, 0)} planillas · Total ${dinero(sel.reduce((s, p) => s + totalPersona(p), 0))}`
+    : '';
+  $('generarCon').disabled = !sel.length;
+}
+
+$('personasCon').addEventListener('input', e => {
+  const det = e.target.closest('details[data-i]'), k = e.target.dataset.k;
+  if (!det || !k) return;
+  const p = personas[det.dataset.i], tr = e.target.closest('tr[data-j]');
+  if (tr) p.lineas[tr.dataset.j][k] = k === 'monto' ? +e.target.value || 0 : e.target.value;
+  else p[k] = k === 'incluir' ? e.target.checked : e.target.value;
+  p.abierto = det.open;
+  pintarConstancias();
+});
+
+$('personasCon').addEventListener('click', e => {
+  if (!e.target.matches('[data-quitar-linea]')) return;
+  const det = e.target.closest('details[data-i]'), i = det.dataset.i, p = personas[i];
+  p.lineas.splice(e.target.closest('tr').dataset.j, 1);
+  p.abierto = true;
+  if (!p.lineas.length) personas.splice(i, 1);
+  pintarConstancias();
+});
+
+$('extraerCon').onclick = async () => {
+  const elegidos = [...$('archivosCon').files];
+  if (!elegidos.length) return $('msgCon').textContent = 'Elegí una o varias planillas (.xlsx o .pdf).';
+  $('extraerCon').disabled = true;
+  $('msgCon').textContent = `Leyendo ${elegidos.length} planilla${elegidos.length === 1 ? '' : 's'}…`;
+  try {
+    const archivos = await Promise.all(elegidos.map(f => new Promise((ok, fail) => {
+      const fr = new FileReader();
+      fr.onload = () => ok({ nombre: f.name, archivo: fr.result.split(',')[1] });
+      fr.onerror = fail;
+      fr.readAsDataURL(f);
+    })));
+    const r = await api('/api/extraer-constancias', { method: 'POST', body: { archivos } });
+    personas = r.personas.map(p => ({ incluir: true, abierto: false, ...p }));
+    pintarConstancias();
+    $('msgCon').innerHTML = `Se leyeron ${r.archivos.length} planilla${r.archivos.length === 1 ? '' : 's'} y ${personas.length} persona${personas.length === 1 ? '' : 's'}. Revisá los períodos y montos antes de generar.`
+      + (r.avisos.length ? `<ul class="avisos">${r.avisos.map(a => `<li>${esc(a)}</li>`).join('')}</ul>` : '');
+  } catch (err) {
+    $('msgCon').textContent = err.message;
+  } finally { $('extraerCon').disabled = false; }
+};
+
+$('generarCon').onclick = async () => {
+  const sel = personas.filter(p => p.incluir);
+  const planillas = sel.reduce((s, p) => s + p.lineas.length, 0);
+  if (!confirm(`¿Generar ${sel.length} constancia${sel.length === 1 ? '' : 's'} con ${planillas} planillas en total?`)) return;
+  $('generarCon').disabled = true;
+  try {
+    const cuerpo = sel.map(({ nombre, cargo, proyecto, lineas }) => ({ nombre, cargo, proyecto, lineas }));
+    const r = await api('/api/constancias', { method: 'POST', body: { fechaEmision: $('fechaCon').value, personas: cuerpo } });
+    personas = []; pintarConstancias();
+    $('msgCon').textContent = `✔ ${r.creados} constancia${r.creados === 1 ? '' : 's'} creada${r.creados === 1 ? '' : 's'}. Copiá los links abajo.`;
+    await cargarEstado(`Constancias del ${$('fechaCon').value}`);
+  } catch (err) {
+    $('msgCon').textContent = err.message; pintarConstancias();
+  }
+};
+
 // ---------- estado ----------
 let recibos = [];
-const periodoDe = r => `${r.diaInicio} al ${r.diaFin} ${r.mes} ${r.anio}`;
+const periodoDe = r => r.tipo === 'constancia' ? `Constancias del ${r.fechaEmision}` : `${r.diaInicio} al ${r.diaFin} ${r.mes} ${r.anio}`;
 
 async function cargarEstado(seleccionar) {
   try { recibos = await api('/api/recibos'); } catch (err) { return $('msgEstado').textContent = err.message; }
@@ -239,9 +355,11 @@ function pintarEstado() {
   const firmados = lista.filter(r => r.firmadoEn).length;
   $('resumenEstado').textContent = lista.length ? `${firmados} de ${lista.length} firmados` : '';
   $('estado').tBodies[0].innerHTML = lista.map(r => {
-    const texto = `Hola ${r.nombre.split(' ')[0]}, este es tu recibo de pago IPMR del ${r.diaInicio} al ${r.diaFin} de ${r.mes.toLowerCase()} ${r.anio}. Ábrelo y fírmalo aquí: ${link(r.token)}`;
+    const texto = r.tipo === 'constancia'
+      ? `Hola ${r.nombre.split(' ')[0]}, esta es la constancia de los pagos de ${r.lineas.length} planillas de IPMR. Ábrela y fírmala aquí: ${link(r.token)}`
+      : `Hola ${r.nombre.split(' ')[0]}, este es tu recibo de pago IPMR del ${r.diaInicio} al ${r.diaFin} de ${r.mes.toLowerCase()} ${r.anio}. Ábrelo y fírmalo aquí: ${link(r.token)}`;
     return `<tr data-token="${r.token}">
-      <td>${esc(r.nombre)}<br><small style="color:#777">${esc(r.cargo)}</small></td>
+      <td>${esc(r.nombre)}<br><small style="color:#777">${esc(r.cargo)}${r.tipo === 'constancia' ? ` · constancia de ${r.lineas.length} planillas` : ''}</small></td>
       <td>${esc(r.proyecto)}</td>
       <td class="n">${dinero(r.total)}</td>
       <td>${r.firmadoEn ? `<span class="estado firm">Firmado</span><br><small>${esc(r.firmadoEnTexto)}</small>` : '<span class="estado pend">Pendiente de firma</span>'}</td>

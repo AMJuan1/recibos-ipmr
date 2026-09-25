@@ -2,7 +2,10 @@
 import assert from 'node:assert/strict';
 import { writeFileSync, readFileSync } from 'node:fs';
 import { montoEnLetras, calcular, generarPdf } from './recibo.js';
-import { montosDe, periodoDe, mapear } from './planilla.js';
+import { montosDe, periodoDe, mapear, constanciasDe } from './planilla.js';
+import { MESES as MESES_TEST } from './recibo.js';
+
+const paginas = pdf => (pdf.toString('latin1').match(/\/Type \/Page\b/g) || []).length;
 
 // Período: 1RA = 1 al 15; 2DA = 16 al último día del mes.
 assert.deepEqual(periodoDe('1RA QUINCENA SEPTIEMBRE 2026'), { diaInicio: 1, diaFin: 15, mes: 'SEPTIEMBRE', anio: 2026 });
@@ -79,4 +82,44 @@ writeFileSync('muestra.pdf', pdf);
 const pdfLargo = await generarPdf({ ...r, iva: 65, descuento: 150, firma });
 assert.equal((pdfLargo.toString('latin1').match(/\/Type \/Page\b/g) || []).length, 1, 'el recibo con IVA y descuento debe caber en una página');
 writeFileSync('muestra-completa.pdf', pdfLargo);
+// ---------- constancias de varias planillas ----------
+const planilla = (periodo, proyecto, gente) => ({
+  personas: gente.map(([empleado, puesto, total]) => ({ empleado, puesto, proyecto, periodo, montos: {}, total_pagado: total })),
+});
+const agrupadas = constanciasDe([
+  { nombre: 'agosto.xlsx', datos: planilla('2DA QUINCENA AGOSTO 2026', 'PROYECTO EL CHANGALLO', [['LUIS ARMANDO VAQUERO ALAS', 'TEC. AMBIENTAL', 450]]) },
+  { nombre: 'agosto.xlsx', datos: planilla('2DA QUINCENA AGOSTO 2026', 'PROYECTO COMUNIDAD ITALIA', [['LUIS ARMANDO VAQUERO ALAS', 'TEC. AMBIENTAL', 450]]) },
+  { nombre: 'julio.xlsx', datos: planilla('1RA QUINCENA JULIO 2026', 'PROYECTO EL CHANGALLO', [['LUIS ARMANDO VAQUERO ALAS', 'TEC. AMBIENTAL', 400]]) },
+]);
+// Una persona en dos proyectos -> dos constancias, cada una con lo suyo y en orden cronológico.
+assert.equal(agrupadas.length, 2);
+const changallo = agrupadas.find(p => p.proyecto === 'Changallo');
+assert.deepEqual(changallo.lineas.map(l => l.concepto), ['1RA QUINCENA JULIO 2026', '2DA QUINCENA AGOSTO 2026']);
+assert.equal(calcular({ tipo: 'constancia', lineas: changallo.lineas }).total, 850);
+assert.equal(agrupadas.find(p => p.proyecto === 'Italia').lineas.length, 1);
+
+// Dos hojas del mismo proyecto y período se distinguen en el texto de la fila.
+const mismoPeriodo = constanciasDe([
+  { nombre: 'sept.xlsx', datos: planilla('1RA QUINCENA SEPTIEMBRE 2026', 'PROYECTO COMUNIDAD ITALIA', [['ANA', 'ING.', 100]]) },
+  { nombre: 'sept.xlsx', datos: planilla('1RA QUINCENA SEPTIEMBRE 2026', 'CONTRATO MOPT 126 /2026 COMUNIDAD ITALIA', [['ANA', 'ING.', 200]]) },
+]);
+assert.equal(mismoPeriodo.length, 1);
+assert.match(mismoPeriodo[0].lineas[1].concepto, /CONTRATO MOPT/);
+
+const constancia = {
+  tipo: 'constancia', nombre: 'LUIS ARMANDO VAQUERO ALAS', cargo: 'TEC. AMBIENTAL', proyecto: 'Changallo',
+  fechaEmision: '2026-09-25', lineas: changallo.lineas,
+};
+const pdfCon = await generarPdf({ ...constancia, firma });
+assert.equal(pdfCon.subarray(0, 5).toString(), '%PDF-');
+assert.equal(paginas(pdfCon), 1, 'una constancia corta cabe en una página');
+writeFileSync('muestra-constancia.pdf', pdfCon);
+
+// Con muchas planillas la tabla sigue en otra página, sin cortar el bloque de firmas.
+const muchas = Array.from({ length: 26 }, (_, i) => ({ concepto: `${i % 2 ? '2DA' : '1RA'} QUINCENA ${MESES_TEST[i % 12]} 2025`, monto: 450 + i }));
+const pdfLargoCon = await generarPdf({ ...constancia, lineas: muchas, firma });
+assert.ok(paginas(pdfLargoCon) >= 2, 'con 26 planillas la constancia usa más de una página');
+assert.equal(calcular({ tipo: 'constancia', lineas: muchas }).total, muchas.reduce((s, l) => s + l.monto, 0));
+writeFileSync('muestra-constancia-larga.pdf', pdfLargoCon);
+
 console.log('ok');

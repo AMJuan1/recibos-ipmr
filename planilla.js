@@ -55,6 +55,33 @@ export function montosDe(montos) {
   };
 }
 
+// ---------- constancias: varias planillas atrasadas, una firma por persona y proyecto ----------
+const ordenPeriodo = concepto => {
+  const p = periodoDe(concepto);
+  return p ? p.anio * 10000 + (MESES.indexOf(p.mes) + 1) * 100 + p.diaInicio : Number.MAX_SAFE_INTEGER;
+};
+
+export function constanciasDe(archivos) {
+  const grupos = new Map();
+  for (const { nombre: archivo, datos } of archivos) {
+    for (const p of datos.personas || []) {
+      const proyecto = proyectoDe(p.proyecto);
+      const nombre = String(p.empleado || '').trim();
+      if (!nombre) continue;
+      const clave = `${nombre.toUpperCase()}|${proyecto}`;
+      const grupo = grupos.get(clave) || { nombre, proyecto, cargo: p.puesto || '', lineas: [] };
+      let concepto = p.periodo || archivo;
+      // Dos hojas del mismo proyecto en el mismo período (p. ej. Italia y el contrato MOPT): se distinguen.
+      if (grupo.lineas.some(l => l.concepto === concepto)) concepto = `${concepto} — ${p.proyecto}`;
+      grupo.lineas.push({ concepto, monto: Number(p.total_pagado) || 0 });
+      grupos.set(clave, grupo);
+    }
+  }
+  return [...grupos.values()]
+    .map(g => ({ ...g, lineas: g.lineas.sort((a, b) => ordenPeriodo(a.concepto) - ordenPeriodo(b.concepto)) }))
+    .sort((a, b) => a.proyecto.localeCompare(b.proyecto) || a.nombre.localeCompare(b.nombre));
+}
+
 // La planilla manda: Excel calcula con más decimales de los que imprime (AFP 32.625 -> 32.63),
 // así que los subtotales se toman de sus columnas y no se recalculan. Solo se usan si suman el total de la hoja.
 export function subtotalesDe(montos, lineas, totalPlanilla) {

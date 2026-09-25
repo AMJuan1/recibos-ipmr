@@ -1,6 +1,13 @@
 # Recibos de pago firmables — IPMR
 
 App web para emitir los recibos de cada quincena, enviar un link único por trabajador y guardar el recibo firmado.
+Genera dos tipos de documento:
+
+| Tipo | Para qué | Plantilla |
+|---|---|---|
+| **Recibo de quincena** | El pago de una quincena, con su desglose (salario, ISSS, AFP, renta, viáticos) | `Plantilla_Recibo_IPMR.docx` |
+| **Constancia de planillas atrasadas** | Varias planillas ya pagadas sin constancia firmada: una tabla con todas y una sola firma | `Plantilla_Recibo_Multiples_Quincenas_IPMR.docx` |
+
 
 - **Admin (Jan)**: `/admin` → sube la planilla (`.xlsx` o `.pdf`), revisa/edita la lista, genera un recibo y un link por trabajador, y ve el estado (pendiente / firmado).
 - **Trabajador**: abre su link `/recibo/<token>` desde el teléfono, ve su recibo completo, firma con el dedo y presiona *Firmar y enviar*. Puede descargar su PDF; el recibo firmado queda guardado y se baja del panel cuando se quiera (botón **PDF**). Un link ya firmado queda en solo lectura.
@@ -12,8 +19,8 @@ App web para emitir los recibos de cada quincena, enviar un link único por trab
 | `server.js` | Rutas, sesión de admin, base de datos SQLite y endpoint de extracción |
 | `extractor/planillas.py` | Extractor de planillas (Excel/PDF → JSON), tal cual viene del módulo original |
 | `extractor/extraer.py` | Envoltura: recibe el archivo por stdin y devuelve el JSON por stdout |
-| `planilla.js` | Llama al extractor y traduce su JSON a los campos del recibo (proyecto, período, montos) |
-| `recibo.js` | Cálculos, monto en letras, PDF (pdfkit) y HTML del recibo — formato tomado de `Plantilla_Recibo_IPMR.docx` |
+| `planilla.js` | Llama al extractor y traduce su JSON a los campos del recibo y al agrupado de las constancias |
+| `recibo.js` | Cálculos, monto en letras, PDF (pdfkit) y HTML de los dos documentos, con el formato de las plantillas |
 | `public/admin.html` | Panel del administrador |
 | `public/firma.js`, `public/trabajador.css` | Cuadro de firma y estilos de la página del trabajador |
 | `public/firma-autoriza.png` | Firma escaneada del Ing. José Othmaro Morales Urbina |
@@ -61,6 +68,17 @@ Guardá de vez en cuando una copia de `data/recibos.db`.
 4. Los links quedan como `https://<dominio>/recibo/<token>` — el panel los genera con el dominio desde el que se abre.
 
 Sirve igual en Railway o Fly.io: es un solo proceso Node con un volumen persistente.
+
+## Constancias de planillas atrasadas
+
+En el panel, sección 2: se suben **varias** planillas a la vez y la app arma una constancia por
+**persona y proyecto** (si alguien aparece en Changallo e Italia recibe dos links, uno por proyecto).
+Cada fila de la tabla es una planilla, con el monto que esa planilla pagó, ordenadas por fecha.
+Se pueden editar los textos y montos, y quitar filas, antes de generar. Si son muchas planillas la
+tabla sigue en una segunda página y el bloque de firmas queda completo al final.
+
+El link y la firma funcionan igual que en el recibo de quincena: `/recibo/<token>`, se firma una sola
+vez y queda en solo lectura.
 
 ## Notas
 
